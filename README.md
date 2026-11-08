@@ -17,7 +17,7 @@ Nobody needs an account to play. An admin signs in through [Authentik](https://g
 | | |
 |---|---|
 | Move | WASD or arrow keys, or the left joystick |
-| Attack | Automatic: you and your companion fire at the nearest enemy in range. On phones, hold the right joystick to aim yourself |
+| Attack | Automatic: you and your companion fire at the nearest enemy in range. Hold the right joystick on phones, or the left mouse button on desktop, to aim yourself |
 | Find the hostage | Every enemy you destroy briefly lights a wedge of the grid. The hostage is somewhere inside it |
 | Companion | Joins after enough kills, or as you get close to the hostage, whichever comes first |
 | Win | Defeat the boss, then reach the hostage |

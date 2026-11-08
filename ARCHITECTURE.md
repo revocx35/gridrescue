@@ -64,8 +64,8 @@ each side of the game because there is not enough height to stack them.
   canvas and uploads a PNG of at most 1024 px. Native image decoders are a classic attack surface, so the server never
   runs one; it only parses and rebuilds PNG. An animated image keeps its first frame.
 - **Content-addressed sprites** can be cached forever, and two roles may share one file.
-- **Auto-fire with an optional aim stick.** Holding the aim stick fires that way; letting go returns to auto-aim, so the
-  game stays playable with one thumb. Desktop has no aim control and uses auto-aim.
+- **Auto-fire with optional aiming.** Holding the aim stick, or the left mouse button on desktop, fires that way; letting
+  go returns to auto-aim, so the game stays playable with one thumb or the keyboard alone.
 - **Shared `schema.js`** so server validation and admin form limits cannot drift apart.
 
 ## Platform constraints

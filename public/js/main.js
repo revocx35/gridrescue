@@ -85,6 +85,46 @@ class Keyboard {
   }
 }
 
+/** Holding the left mouse button aims at the cursor. Touches on the canvas are ignored. */
+class MouseAim {
+  constructor(canvas) {
+    this.canvas = canvas;
+    this.pointer = null;
+    this.position = { x: 0, y: 0 };
+    canvas.addEventListener('pointerdown', (e) => {
+      if (e.pointerType !== 'mouse' || e.button !== 0) return;
+      this.pointer = e.pointerId;
+      canvas.setPointerCapture(e.pointerId);
+      this.#track(e);
+    });
+    canvas.addEventListener('pointermove', (e) => {
+      if (e.pointerId === this.pointer) this.#track(e);
+    });
+    for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) {
+      canvas.addEventListener(type, (e) => {
+        if (e.pointerId === this.pointer) this.pointer = null;
+      });
+    }
+    addEventListener('blur', () => this.reset());
+  }
+
+  #track(e) {
+    const box = this.canvas.getBoundingClientRect();
+    this.position = { x: e.clientX - box.left, y: e.clientY - box.top };
+  }
+
+  /** Direction from a canvas position to the cursor, or zero when the button is up. */
+  vectorFrom(origin) {
+    if (this.pointer === null) return { x: 0, y: 0 };
+    return { x: this.position.x - origin.x, y: this.position.y - origin.y };
+  }
+
+  reset() {
+    if (this.pointer !== null && this.canvas.hasPointerCapture(this.pointer)) this.canvas.releasePointerCapture(this.pointer);
+    this.pointer = null;
+  }
+}
+
 class Game {
   constructor(config, sprites) {
     this.config = config;
@@ -93,6 +133,7 @@ class Game {
     this.keyboard = new Keyboard();
     this.moveStick = new Joystick($('joystick-move'), $('knob-move'));
     this.aimStick = new Joystick($('joystick-aim'), $('knob-aim'));
+    this.mouseAim = new MouseAim($('game'));
     this.mode = 'menu';
     this.accumulator = 0;
     this.lastFrame = performance.now();
@@ -141,7 +182,7 @@ class Game {
   showMenu() {
     const { site } = this.config;
     const { hostage, boss } = this.names;
-    $('controls-hint').textContent = 'Move with WASD or the arrow keys. Your attacks fire on their own.';
+    $('controls-hint').textContent = 'Move with WASD or the arrow keys. Attacks fire on their own; hold the mouse button to aim.';
     this.overlay({
       heading: `Rescue ${hostage}`,
       text: `Keep moving and destroy what chases you. Each kill lights up the way to ${hostage}. Defeat ${boss} to set them free.`,
@@ -160,6 +201,7 @@ class Game {
     this.accumulator = 0;
     this.moveStick.reset();
     this.aimStick.reset();
+    this.mouseAim.reset();
     $('overlay').hidden = true;
     $('hud').hidden = false;
     $('player-name').textContent = this.names.player;
@@ -171,6 +213,7 @@ class Game {
   pause() {
     if (this.mode !== 'playing') return;
     this.mode = 'paused';
+    this.mouseAim.reset();
     this.overlay({ heading: 'Paused', text: `Time ${formatTime(this.state.time)}, ${this.state.kills} destroyed.`, action: 'Resume' });
   }
 
@@ -239,7 +282,9 @@ class Game {
   input() {
     const keys = this.keyboard.vector;
     const stick = this.moveStick.vector;
-    const aim = this.aimStick.vector;
+    const { player } = this.state;
+    const held = this.aimStick.vector;
+    const aim = held.x || held.y ? held : this.mouseAim.vectorFrom(this.renderer.toScreen(player.x, player.y));
     return { x: keys.x + stick.x, y: keys.y + stick.y, aimX: aim.x, aimY: aim.y };
   }
 

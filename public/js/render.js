@@ -183,6 +183,12 @@ export class Renderer {
     this.view.halfH = this.height / 2 / this.scale;
   }
 
+  /** Where a world position appears, in CSS pixels from the canvas's top-left corner. */
+  toScreen(x, y) {
+    const cam = this.camera ?? { x, y };
+    return { x: this.width / 2 + (x - cam.x) * this.scale, y: this.height / 2 + (y - cam.y) * this.scale };
+  }
+
   burst(x, y, color, count, power = 240) {
     for (let i = 0; i < count && this.particles.length < 260; i++) {
       const a = Math.random() * TAU;
