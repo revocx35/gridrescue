@@ -7,7 +7,6 @@ import { createGame, step } from './sim.js';
 const FIXED_STEP = 1 / 60;
 const $ = (id) => document.getElementById(id);
 const SECTION_IDS = { title: 'section-title', game: 'section-game', joystick: 'section-joystick' };
-const JUSTIFY = { left: 'flex-start', center: 'center', right: 'flex-end' };
 
 const layoutQuery = matchMedia('(pointer: coarse), (max-width: 760px)');
 const isMobile = () => layoutQuery.matches;
@@ -28,7 +27,7 @@ function applySite(site) {
   root.setProperty('--title-mobile', `${site.titleSizeMobile}px`);
   root.setProperty('--title-align', site.titleAlign);
   root.setProperty('--joy-size', `${site.joystickSize}px`);
-  root.setProperty('--joy-justify', JUSTIFY[site.joystickSide]);
+  document.body.dataset.moveSide = site.joystickSide;
   document.title = site.title;
   document.querySelector('meta[name="theme-color"]').content = c.background;
   $('site-title').textContent = site.title;
@@ -92,7 +91,8 @@ class Game {
     this.names = Object.fromEntries(ROLES.map((role) => [role, config.characters[role].name]));
     this.renderer = new Renderer($('game'), config, sprites);
     this.keyboard = new Keyboard();
-    this.joystick = new Joystick($('joystick'), $('joy-knob'));
+    this.moveStick = new Joystick($('joystick-move'), $('knob-move'));
+    this.aimStick = new Joystick($('joystick-aim'), $('knob-aim'));
     this.mode = 'menu';
     this.accumulator = 0;
     this.lastFrame = performance.now();
@@ -158,7 +158,8 @@ class Game {
     this.hintExplained = false;
     this.mode = 'playing';
     this.accumulator = 0;
-    this.joystick.reset();
+    this.moveStick.reset();
+    this.aimStick.reset();
     $('overlay').hidden = true;
     $('hud').hidden = false;
     $('player-name').textContent = this.names.player;
@@ -237,8 +238,9 @@ class Game {
 
   input() {
     const keys = this.keyboard.vector;
-    const stick = this.joystick.vector;
-    return { x: keys.x + stick.x, y: keys.y + stick.y };
+    const stick = this.moveStick.vector;
+    const aim = this.aimStick.vector;
+    return { x: keys.x + stick.x, y: keys.y + stick.y, aimX: aim.x, aimY: aim.y };
   }
 
   setBar(id, fraction) {

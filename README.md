@@ -8,15 +8,16 @@ Nobody needs an account to play. An admin signs in through [Authentik](https://g
 
 - the name and image of all six characters (player, companion, hostage, enemy 1, enemy 2, enemy 3 the boss)
 - the site menu: game title, tagline, button and end-screen text, colours, page order for desktop and mobile,
-  joystick size and position
+  joystick size and which side the movement stick is on
+- each enemy's attack type: melee, sniper (one bullet) or pump (spread)
 - gameplay numbers: health, speed, damage, spawn rates, how far away the hostage is and how wide the hint is
 
 ## How it plays
 
 | | |
 |---|---|
-| Move | WASD or arrow keys, or the joystick |
-| Attack | Automatic: you and your companion fire at the nearest enemy in range |
+| Move | WASD or arrow keys, or the left joystick |
+| Attack | Automatic: you and your companion fire at the nearest enemy in range. On phones, hold the right joystick to aim yourself |
 | Find the hostage | Every enemy you destroy briefly lights a wedge of the grid. The hostage is somewhere inside it |
 | Companion | Joins after enough kills, or as you get close to the hostage, whichever comes first |
 | Win | Defeat the boss, then reach the hostage |

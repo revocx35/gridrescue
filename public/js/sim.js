@@ -7,6 +7,10 @@ const BOSS_BULLET_SPEED = 300;
 const DESPAWN_DISTANCE = 2600;
 const PLAYER_GRACE = 0.28;
 const LEASH_FACTOR = 2.3;
+const RANGED = {
+  sniper: { range: 540, interval: 2.4, windup: 0.5, pellets: 1, spread: 0, speed: 640, ttl: 1.3, r: 6, retreat: true },
+  pump: { range: 250, interval: 1.7, windup: 0.25, pellets: 5, spread: 0.17, speed: 430, ttl: 0.75, r: 7, retreat: false },
+};
 export const CELL_SIZE = 80;
 
 const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
@@ -74,11 +78,23 @@ function fireAt(s, shooter, ch, dt) {
   const dx = target.x + target.vx * lead - shooter.x;
   const dy = target.y + target.vy * lead - shooter.y;
   const d = Math.hypot(dx, dy) || 1;
+  pushShot(s, shooter, ch, dx / d, dy / d);
+}
+
+function pushShot(s, shooter, ch, dirX, dirY) {
   s.shots.push({
     x: shooter.x, y: shooter.y,
-    vx: (dx / d) * SHOT_SPEED, vy: (dy / d) * SHOT_SPEED,
+    vx: dirX * SHOT_SPEED, vy: dirY * SHOT_SPEED,
     ttl: 0.95, damage: ch.damage, ally: shooter !== s.player,
   });
+}
+
+/** Aim stick held: fire that way even with no enemy in range. */
+function fireAimed(s, shooter, ch, aim, dt) {
+  shooter.cool -= dt;
+  if (shooter.cool > 0) return;
+  shooter.cool = ch.fireInterval;
+  pushShot(s, shooter, ch, aim.x, aim.y);
 }
 
 /** A lit wedge that contains the hostage's real direction without being centred on it. */
@@ -159,6 +175,7 @@ function spawnEnemy(s) {
   e.kind = kind;
   e.speed = ch.speed * (0.92 + rng() * 0.16);
   e.damage = ch.damage;
+  e.attack = ch.attackType;
   s.enemies.push(e);
 }
 
@@ -214,6 +231,39 @@ function chaseTarget(s, e) {
   return s.player;
 }
 
+/** Ranged enemies only shoot from where the player can see them. */
+function onScreen(s, e) {
+  return Math.abs(e.x - s.player.x) < s.view.halfW * 0.92 && Math.abs(e.y - s.player.y) < s.view.halfH * 0.92;
+}
+
+function rangedPace(s, e, spec, d) {
+  if (e.windup > 0) return 0;
+  if (d > spec.range || !onScreen(s, e)) return 1;
+  return spec.retreat && d < spec.range * 0.55 ? -0.6 : 0;
+}
+
+function updateRangedAttack(s, e, target, spec, d, dt) {
+  e.cool -= dt;
+  if (e.windup > 0) {
+    e.windup -= dt;
+    if (e.windup > 0) return;
+    for (let i = 0; i < spec.pellets; i++) {
+      const angle = e.aim + (i - (spec.pellets - 1) / 2) * spec.spread;
+      s.bullets.push({
+        x: e.x, y: e.y,
+        vx: Math.cos(angle) * spec.speed, vy: Math.sin(angle) * spec.speed,
+        ttl: spec.ttl, r: spec.r, damage: e.damage,
+      });
+    }
+    return;
+  }
+  if (e.cool <= 0 && d <= spec.range * 1.1 && onScreen(s, e)) {
+    e.cool = spec.interval;
+    e.windup = spec.windup;
+    e.aim = Math.atan2(target.y - e.y, target.x - e.x); // locked now, so a moving player can dodge
+  }
+}
+
 function updateEnemies(s, dt) {
   for (let i = s.enemies.length - 1; i >= 0; i--) {
     const e = s.enemies[i];
@@ -223,8 +273,10 @@ function updateEnemies(s, dt) {
     }
     const target = chaseTarget(s, e);
     const d = dist(e, target) || 1;
-    let vx = ((target.x - e.x) / d) * e.speed;
-    let vy = ((target.y - e.y) / d) * e.speed;
+    const spec = RANGED[e.attack];
+    const pace = spec ? rangedPace(s, e, spec, d) : 1;
+    let vx = ((target.x - e.x) / d) * e.speed * pace;
+    let vy = ((target.y - e.y) / d) * e.speed * pace;
     for (const other of s.enemies) {
       if (other === e) continue;
       const ox = e.x - other.x;
@@ -242,6 +294,10 @@ function updateEnemies(s, dt) {
     e.y += vy * dt;
     if (Math.abs(vx) > 5) e.face = Math.sign(vx);
     e.flash = Math.max(0, e.flash - dt);
+    if (spec) {
+      updateRangedAttack(s, e, target, spec, d, dt);
+      continue;
+    }
     e.cool -= dt;
     if (e.cool <= 0 && d < e.r + target.r) {
       e.cool = 0.75;
@@ -319,18 +375,23 @@ function updateBoss(s, dt) {
     b.fanT -= dt * pace;
     b.ringT -= dt * pace;
     b.chargeT -= dt * pace;
-    if (b.fanT <= 0) {
+    const attack = ch.attackType;
+    if (attack === 'sniper' && b.fanT <= 0) {
+      b.fanT = 0.85;
+      fireBossBullet(s, toPlayer, BOSS_BULLET_SPEED * 2.1);
+    }
+    if (attack === 'pump' && b.fanT <= 0) {
       b.fanT = 1.5;
       const count = enraged ? 7 : 5;
       for (let i = 0; i < count; i++) fireBossBullet(s, toPlayer + (i - (count - 1) / 2) * 0.2);
     }
-    if (b.ringT <= 0) {
+    if (attack === 'pump' && b.ringT <= 0) {
       b.ringT = 4.2;
       const start = s.rng() * TAU;
       for (let i = 0; i < 16; i++) fireBossBullet(s, start + (i / 16) * TAU, BOSS_BULLET_SPEED * 0.8);
     }
     if (b.chargeT <= 0) {
-      b.chargeT = 5.5;
+      b.chargeT = attack === 'melee' ? 3.2 : 5.5;
       b.windup = 0.7;
       emit(s, 'bossCharge');
     }
@@ -413,7 +474,7 @@ function updateRescue(s) {
   emit(s, 'win');
 }
 
-/** Advances the game by dt seconds. input is { x, y } with magnitude at most 1. */
+/** Advances the game by dt seconds. input is { x, y } to move and optional { aimX, aimY } to aim. */
 export function step(s, dt, input) {
   if (s.status !== 'playing') return;
   s.time += dt;
@@ -430,6 +491,10 @@ export function step(s, dt, input) {
   if (Math.abs(p.vx) > 5) p.face = Math.sign(p.vx);
   p.flash = Math.max(0, p.flash - dt);
 
+  const aimLength = Math.hypot(input.aimX ?? 0, input.aimY ?? 0);
+  p.aim = aimLength > 0 ? { x: input.aimX / aimLength, y: input.aimY / aimLength } : null;
+  if (p.aim && Math.abs(p.aim.x) > 0.05) p.face = Math.sign(p.aim.x);
+
   if (s.hint) {
     s.hint.ttl -= dt;
     if (s.hint.ttl <= 0) s.hint = null;
@@ -437,7 +502,8 @@ export function step(s, dt, input) {
 
   maybeSpawnCompanion(s);
   updateSpawning(s, dt);
-  fireAt(s, p, ch, dt);
+  if (p.aim) fireAimed(s, p, ch, p.aim, dt);
+  else fireAt(s, p, ch, dt);
   updateCompanion(s, dt);
   updateEnemies(s, dt);
   updateBoss(s, dt);

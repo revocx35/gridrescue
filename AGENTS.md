@@ -13,7 +13,7 @@ No build step, no bundler, no framework in the browser: `public/` is served as w
 public/index.html, js/main.js      Game page: applies layout, input, game loop, HUD
 public/js/sim.js                   Game rules. No DOM. Runs headless in tests
 public/js/render.js                Canvas drawing and the built-in default art
-public/js/joystick.js              Pointer Events joystick
+public/js/joystick.js              Pointer Events joystick (one instance each for moving and aiming)
 public/js/schema.js                Editable config: defaults, limits, validation. Shared by server and admin UI
 public/admin.html, js/admin.js     Admin editor
 public/js/image-convert.js         Converts any browser-readable image to a size-limited PNG before upload
@@ -32,7 +32,7 @@ compose.yaml, Dockerfile           Hardened deployment
 
 ```sh
 npm ci                        # install
-npm test                      # all tests (91): rules, editor, PNG, auth, real OIDC client against a local issuer
+npm test                      # all tests: rules, editor, PNG, auth, real OIDC client against a local issuer
 npm start                     # plain HTTP unless TLS_* is set; needs PUBLIC_URL for sign-in
 scripts/setup.sh IP:x.x.x.x   # once per checkout
 docker compose up -d --build  # deploy
@@ -76,5 +76,7 @@ docker compose up -d --build  # deploy
 - Any image format is converted to PNG in the admin's browser, so formats depend on that browser (HEIC opens in Safari,
   usually not in Chrome). Do not add server-side image decoders for this: the server accepting only sanitised PNG is a
   security property.
+- Removing or renaming a config option needs a mapping in `Store.upgrade`. A stored value that no longer validates makes
+  the whole file count as corrupt, so it gets moved aside and the game falls back to defaults.
 - nginx cannot verify IP SANs, so a proxy pinning the upstream certificate must use `proxy_ssl_name localhost`.
 - `@fastify/rate-limit` counts `/auth/*` separately. Scripted sign-in tests hit the limit quickly.

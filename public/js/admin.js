@@ -90,6 +90,18 @@ function numberField(spec, value, onChange) {
   return el('label', { class: 'field' }, el('span', { class: 'micro', textContent: spec.label }), input);
 }
 
+function choiceField(spec, value, onChange) {
+  const select = el(
+    'select', { on: { change: (e) => onChange(e.target.value) } },
+    ...spec.options.map((option) => el('option', {
+      value: option,
+      textContent: spec.optionLabels?.[option] ?? option[0].toUpperCase() + option.slice(1),
+    })),
+  );
+  select.value = value;
+  return el('label', { class: 'field' }, el('span', { class: 'micro', textContent: spec.label }), select);
+}
+
 function textField(label, max, value, onChange, wide = false) {
   const input = el('input', { type: 'text', maxLength: max, value, on: { input: (e) => onChange(e.target.value) } });
   return el('label', { class: `field${wide ? ' block-wide' : ''}` }, el('span', { class: 'micro', textContent: label }), input);
@@ -159,7 +171,9 @@ function characterCard(role) {
   }
   const stats = el('div', { class: 'field-grid' });
   for (const field of ROLE_FIELDS[role]) {
-    stats.append(numberField(CHARACTER_FIELDS[field], ch[field], (value) => { ch[field] = value; markDirty(); }));
+    const spec = CHARACTER_FIELDS[field];
+    const update = (value) => { ch[field] = value; markDirty(); };
+    stats.append(spec.options ? choiceField(spec, ch[field], update) : numberField(spec, ch[field], update));
   }
   return el(
     'article', { class: 'panel char-card' },
@@ -221,14 +235,17 @@ function drawPreview(host) {
 
   const sections = { title: titleBlock, game };
   if (mobile) {
-    const size = s.joystickSize * 0.45;
-    const knob = el('div', { class: 'mock-knob' });
-    knob.style.backgroundImage = gradient;
-    const joy = el('div', { class: 'mock-joy' }, knob);
-    joy.style.width = joy.style.height = `${size}px`;
-    const row = el('div', { class: 'mock-joy-row' }, joy);
-    row.style.justifyContent = { left: 'flex-start', center: 'center', right: 'flex-end' }[s.joystickSide];
-    sections.joystick = row;
+    const size = Math.min(s.joystickSize * 0.45, 76);
+    const stick = (fill) => {
+      const knob = el('div', { class: 'mock-knob' });
+      knob.style.background = fill;
+      const joy = el('div', { class: 'mock-joy' }, knob);
+      joy.style.width = joy.style.height = `${size}px`;
+      return joy;
+    };
+    const move = stick(gradient);
+    const aim = stick(c.accent2);
+    sections.joystick = el('div', { class: 'mock-joy-row' }, ...(s.joystickSide === 'left' ? [move, aim] : [aim, move]));
   }
 
   const order = mobile ? s.mobileOrder : s.desktopOrder;
@@ -249,12 +266,7 @@ function renderSite() {
     appearance.append(numberField(spec, s[key], (value) => { s[key] = value; markDirty(); }));
   }
   for (const [key, spec] of Object.entries(SITE_CHOICE_FIELDS)) {
-    const select = el(
-      'select', { on: { change: (e) => { s[key] = e.target.value; markDirty(); } } },
-      ...spec.options.map((option) => el('option', { value: option, textContent: option[0].toUpperCase() + option.slice(1) })),
-    );
-    select.value = s[key];
-    appearance.append(el('label', { class: 'field' }, el('span', { class: 'micro', textContent: spec.label }), select));
+    appearance.append(choiceField(spec, s[key], (value) => { s[key] = value; markDirty(); }));
   }
 
   const colors = el('div', { class: 'block-grid' });

@@ -36,6 +36,9 @@ describe('config validation', () => {
   rejects('a smuggled sprite', (c) => { c.characters.player.sprite = '../../etc/passwd'; });
   rejects('a stat a role does not have', (c) => { c.characters.hostage.hp = 10; });
   rejects('an invalid choice', (c) => { c.site.titleAlign = 'middle'; });
+  rejects('an unknown attack type', (c) => { c.characters.enemy1.attackType = 'laser'; });
+  rejects('an attack type on the player', (c) => { c.characters.player.attackType = 'melee'; });
+  rejects('a centred joystick', (c) => { c.site.joystickSide = 'center'; });
 
   it('trims names', () => {
     const config = editable();
@@ -183,6 +186,30 @@ describe('admin editing', () => {
     const reopened = new Store(ctx.dir, { error() {} });
     assert.equal(reopened.publicConfig().site.title, 'Kept');
     assert.ok(reopened.publicConfig().characters.boss.spriteUrl);
+  });
+});
+
+describe('config upgrades', () => {
+  it('keeps edits and sprites from a config saved before attack types and the second joystick', async () => {
+    const ctx = await makeApp();
+    const old = defaultConfig();
+    for (const role of ['enemy1', 'enemy2', 'boss']) delete old.characters[role].attackType;
+    old.site.joystickSide = 'center';
+    old.site.title = 'Saved title';
+    old.characters.player.name = 'Saved name';
+    old.characters.player.sprite = 'a'.repeat(64);
+    fs.writeFileSync(path.join(ctx.dir, 'config.json'), JSON.stringify({ revision: 7, config: old }));
+    const store = new Store(ctx.dir, { error() {} });
+    const { revision, config } = store.snapshot();
+    assert.equal(revision, 7);
+    assert.equal(config.site.title, 'Saved title');
+    assert.equal(config.site.joystickSide, 'left');
+    assert.equal(config.characters.player.name, 'Saved name');
+    assert.equal(config.characters.player.sprite, 'a'.repeat(64));
+    assert.equal(config.characters.enemy1.attackType, 'melee');
+    assert.equal(config.characters.boss.attackType, 'pump');
+    assert.equal(fs.readdirSync(ctx.dir).some((name) => name.includes('.corrupt-')), false);
+    await ctx.close();
   });
 });
 

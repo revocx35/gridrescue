@@ -287,6 +287,146 @@ describe('boss and rescue', () => {
   });
 });
 
+describe('aiming', () => {
+  it('fires where the aim stick points, even with no enemy in range', () => {
+    const s = game();
+    s.spawnT = 1e9;
+    step(s, DT, { x: 0, y: 0, aimX: 0, aimY: -0.3 });
+    assert.equal(s.shots.length, 1);
+    assert.ok(Math.abs(s.shots[0].vx) < 1e-9);
+    assert.ok(s.shots[0].vy < 0);
+  });
+
+  it('overrides auto-aim while held', () => {
+    const s = game();
+    s.spawnT = 1e9;
+    placeEnemy(s, 'enemy2', 200, 0).speed = 0;
+    step(s, DT, { x: 0, y: 0, aimX: -1, aimY: 0 });
+    assert.ok(s.shots[0].vx < 0);
+  });
+
+  it('returns to auto-aim when released', () => {
+    const s = game();
+    s.spawnT = 1e9;
+    placeEnemy(s, 'enemy2', 200, 0).speed = 0;
+    step(s, DT, { x: 0, y: 0, aimX: 0, aimY: 0 });
+    assert.equal(s.player.aim, null);
+    assert.ok(s.shots[0].vx > 0);
+  });
+
+  it('respects the fire interval', () => {
+    const s = game();
+    s.spawnT = 1e9;
+    for (let i = 0; i < 60; i++) step(s, DT, { x: 0, y: 0, aimX: 1, aimY: 0 });
+    const expected = Math.floor(1 / s.cfg.characters.player.fireInterval) + 1;
+    assert.ok(Math.abs(s.shots.length + 0 - expected) <= 1, String(s.shots.length));
+  });
+});
+
+describe('enemy attack types', () => {
+  function armed(attack, x = 200) {
+    const s = game();
+    s.spawnT = 1e9;
+    s.cfg.characters.player.damage = 0;
+    const e = placeEnemy(s, 'enemy2', x, 0);
+    e.attack = attack;
+    e.hp = e.maxHp = 1e9;
+    return { s, e };
+  }
+  const until = (s, test, frames = 240) => {
+    for (let i = 0; i < frames && !test(); i++) step(s, DT, still);
+  };
+
+  it('sniper fires exactly one bullet', () => {
+    const { s } = armed('sniper', 340);
+    until(s, () => s.bullets.length > 0);
+    assert.equal(s.bullets.length, 1);
+  });
+
+  it('sniper telegraphs, then fires along the locked line so it can be dodged', () => {
+    const { s, e } = armed('sniper', 340);
+    until(s, () => e.windup > 0);
+    const locked = e.aim;
+    s.player.y = 300;
+    until(s, () => s.bullets.length > 0);
+    assert.ok(Math.abs(Math.atan2(s.bullets[0].vy, s.bullets[0].vx) - locked) < 1e-9);
+  });
+
+  it('pump fires a spread of pellets', () => {
+    const { s } = armed('pump', 200);
+    until(s, () => s.bullets.length > 0);
+    assert.equal(s.bullets.length, 5);
+    assert.ok(new Set(s.bullets.map((b) => b.vy.toFixed(3))).size === 5);
+  });
+
+  it('pump has to get close', () => {
+    const { s, e } = armed('pump', 330);
+    for (let i = 0; i < 12; i++) step(s, DT, still);
+    assert.equal(s.bullets.length, 0);
+    assert.ok(e.x < 330);
+  });
+
+  it('ranged enemies do not hit on contact', () => {
+    const { s } = armed('sniper', 5);
+    step(s, DT, still);
+    assert.equal(s.player.hp, s.player.maxHp);
+  });
+
+  it('melee never shoots but hits on contact', () => {
+    const { s } = armed('melee', 5);
+    for (let i = 0; i < 60 * 5; i++) {
+      step(s, DT, still);
+      s.player.hp = Math.max(s.player.hp, 1);
+    }
+    assert.equal(s.bullets.length, 0);
+    assert.ok(s.player.hp < s.player.maxHp);
+  });
+
+  it('does not shoot from outside the player\'s view', () => {
+    const { s, e } = armed('sniper', 0);
+    e.speed = 0;
+    e.x = s.view.halfW + 40;
+    for (let i = 0; i < 60 * 4; i++) step(s, DT, still);
+    assert.equal(s.bullets.length, 0);
+  });
+
+  it('spawned enemies use the attack type set by the admin', () => {
+    const s = game(3, (c) => { c.characters.enemy2.attackType = 'sniper'; c.gameplay.enemy1Chance = 0; });
+    s.spawnT = 0;
+    step(s, DT, still);
+    assert.equal(s.enemies[0].attack, 'sniper');
+  });
+
+  function bossFight(attack) {
+    const s = game(9, (c) => { c.characters.boss.attackType = attack; c.characters.player.damage = 0; });
+    s.spawnT = 1e9;
+    s.player.hp = s.player.maxHp = 1e9;
+    s.player.x = s.hostage.x + 480;
+    s.player.y = s.hostage.y;
+    return s;
+  }
+
+  it('boss with melee fires nothing', () => {
+    const s = bossFight('melee');
+    for (let i = 0; i < 60 * 12; i++) {
+      step(s, DT, still);
+      assert.equal(s.bullets.length, 0);
+    }
+  });
+
+  it('boss with sniper fires single bullets', () => {
+    const s = bossFight('sniper');
+    until(s, () => s.bullets.length > 0, 60 * 5);
+    assert.equal(s.bullets.length, 1);
+  });
+
+  it('boss with pump fires a spread', () => {
+    const s = bossFight('pump');
+    until(s, () => s.bullets.length > 0, 60 * 5);
+    assert.equal(s.bullets.length, 5);
+  });
+});
+
 describe('losing', () => {
   it('ends the game at zero health', () => {
     const s = game();

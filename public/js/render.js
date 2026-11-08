@@ -347,6 +347,33 @@ export class Renderer {
     ctx.restore();
   }
 
+  #drawAimLines(ctx, s) {
+    ctx.save();
+    ctx.lineCap = 'round';
+    for (const e of s.enemies) {
+      if (!(e.windup > 0) || !this.#visible(e)) continue;
+      const reach = e.attack === 'sniper' ? 800 : 300;
+      ctx.strokeStyle = 'rgba(255,77,94,0.65)';
+      ctx.lineWidth = e.attack === 'sniper' ? 2 : 10;
+      ctx.beginPath();
+      ctx.moveTo(e.x, e.y);
+      ctx.lineTo(e.x + Math.cos(e.aim) * reach, e.y + Math.sin(e.aim) * reach);
+      ctx.stroke();
+    }
+    const aim = s.player.aim;
+    if (aim) {
+      ctx.strokeStyle = this.config.site.colors.accent2;
+      ctx.globalAlpha = 0.7;
+      ctx.lineWidth = 3;
+      ctx.setLineDash([10, 12]);
+      ctx.beginPath();
+      ctx.moveTo(s.player.x + aim.x * 34, s.player.y + aim.y * 34);
+      ctx.lineTo(s.player.x + aim.x * 240, s.player.y + aim.y * 240);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
   #label(ctx, text, x, y, color = '#fff', font = 12) {
     ctx.font = `700 ${font}px ui-sans-serif, system-ui, sans-serif`;
     ctx.textAlign = 'center';
@@ -423,6 +450,7 @@ export class Renderer {
     if (s.companion && !s.companion.down) {
       this.#drawActor(ctx, 'companion', s.companion, characters.companion.size, walk * 0.7);
     }
+    this.#drawAimLines(ctx, s);
     this.#drawActor(ctx, 'player', s.player, characters.player.size, Math.hypot(s.player.vx, s.player.vy) > 5 ? walk : 0);
 
     for (const p of s.shots) {

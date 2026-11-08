@@ -31,6 +31,11 @@ are deleted on every commit. A monotonically increasing `revision` gives optimis
   width, so the true direction is always inside it, but never reliably in the middle.
 - The companion spawns at `companionKills` kills or within `companionDistance` of the hostage, whichever is first, so
   it always arrives before the player does. When downed it returns after 9 seconds.
+- Each enemy role has an `attackType`. Melee hits on contact. Sniper stops at long range, shows an aim line, locks its
+  direction and fires one fast bullet. Pump closes in and fires a five-pellet spread. Ranged enemies only fire from inside
+  the player's view and do no contact damage.
+- The boss's attack type replaces its primary attack: pump is the fan plus the ring, sniper is single fast bullets, and
+  melee fires nothing but charges more often. All three keep the charge.
 - The boss sleeps until the player enters the arena or shoots it, cannot leave the arena, and heals if the player
   runs far enough to make it go home. Under half health its attacks speed up.
 - The game is won only by touching the hostage after the boss is dead, and lost at zero player health.
@@ -38,8 +43,8 @@ are deleted on every commit. A monotonically increasing `revision` gives optimis
 ## Page layout
 
 `data-layout` on `<body>` is `mobile` for coarse pointers or narrow windows. Admin-chosen section order is applied
-with CSS `order`. Desktop shows title and game; mobile adds the joystick panel. A phone in landscape moves the joystick
-beside the game because there is not enough height to stack it.
+with CSS `order`. Desktop shows title and game; mobile adds the panel with the move and aim sticks. A phone in landscape puts one stick on
+each side of the game because there is not enough height to stack them.
 
 ## Admin data flow
 
@@ -59,7 +64,8 @@ beside the game because there is not enough height to stack it.
   canvas and uploads a PNG of at most 1024 px. Native image decoders are a classic attack surface, so the server never
   runs one; it only parses and rebuilds PNG. An animated image keeps its first frame.
 - **Content-addressed sprites** can be cached forever, and two roles may share one file.
-- **Auto-fire.** Keeps the mobile layout to a joystick alone, as specified.
+- **Auto-fire with an optional aim stick.** Holding the aim stick fires that way; letting go returns to auto-aim, so the
+  game stays playable with one thumb. Desktop has no aim control and uses auto-aim.
 - **Shared `schema.js`** so server validation and admin form limits cannot drift apart.
 
 ## Platform constraints

@@ -153,7 +153,7 @@ input[type="color"] {
 .mock-title { font-weight: 800; line-height: 1.1; overflow-wrap: anywhere; -webkit-background-clip: text; background-clip: text; color: transparent; }
 .mock-tagline { margin-top: 2px; font-size: 10px; opacity: 0.7; }
 .mock-game { flex: 1; min-height: 0; border: 1px solid var(--line); border-radius: 7px; background-size: 16px 16px; }
-.mock-joy-row { display: flex; }
+.mock-joy-row { display: flex; justify-content: space-between; }
 .mock-joy { border: 1px solid var(--line); border-radius: 50%; display: grid; place-items: center; }
 .mock-knob { width: 42%; height: 42%; border-radius: 50%; }
 

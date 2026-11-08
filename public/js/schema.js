@@ -18,9 +18,9 @@ export const ROLE_FIELDS = {
   player: [...COMBAT, 'fireInterval'],
   companion: [...COMBAT, 'fireInterval'],
   hostage: ['size'],
-  enemy1: COMBAT,
-  enemy2: COMBAT,
-  boss: COMBAT,
+  enemy1: [...COMBAT, 'attackType'],
+  enemy2: [...COMBAT, 'attackType'],
+  boss: [...COMBAT, 'attackType'],
 };
 
 export const CHARACTER_FIELDS = {
@@ -29,6 +29,11 @@ export const CHARACTER_FIELDS = {
   speed: { label: 'Speed', min: 0, max: 800, step: 1 },
   damage: { label: 'Damage', min: 0, max: 5000, step: 1 },
   fireInterval: { label: 'Seconds between shots', min: 0.05, max: 5, step: 0.01 },
+  attackType: {
+    label: 'Attack type',
+    options: ['melee', 'sniper', 'pump'],
+    optionLabels: { melee: 'Melee', sniper: 'Sniper (one bullet)', pump: 'Pump (spread)' },
+  },
 };
 
 export const GAMEPLAY_FIELDS = {
@@ -69,7 +74,7 @@ export const SITE_NUMBER_FIELDS = {
 
 export const SITE_CHOICE_FIELDS = {
   titleAlign: { label: 'Title alignment', options: ['left', 'center', 'right'] },
-  joystickSide: { label: 'Joystick position', options: ['left', 'center', 'right'] },
+  joystickSide: { label: 'Movement joystick side', options: ['left', 'right'] },
 };
 
 export const ORDER_FIELDS = {
@@ -90,7 +95,7 @@ export function defaultConfig() {
       winText: 'Rescued. You brought them home.',
       loseText: 'You were overrun.',
       titleAlign: 'center',
-      joystickSide: 'center',
+      joystickSide: 'left',
       titleSizeDesktop: 48,
       titleSizeMobile: 28,
       joystickSize: 150,
@@ -109,9 +114,9 @@ export function defaultConfig() {
       player: { name: 'Runner', sprite: null, size: 46, hp: 100, speed: 255, damage: 18, fireInterval: 0.26 },
       companion: { name: 'Scout', sprite: null, size: 40, hp: 80, speed: 285, damage: 10, fireInterval: 0.4 },
       hostage: { name: 'Hostage', sprite: null, size: 44 },
-      enemy1: { name: 'Brute', sprite: null, size: 62, hp: 130, speed: 135, damage: 20 },
-      enemy2: { name: 'Stalker', sprite: null, size: 36, hp: 32, speed: 180, damage: 8 },
-      boss: { name: 'Warden', sprite: null, size: 118, hp: 1500, speed: 120, damage: 13 },
+      enemy1: { name: 'Brute', sprite: null, size: 62, hp: 130, speed: 135, damage: 20, attackType: 'melee' },
+      enemy2: { name: 'Stalker', sprite: null, size: 36, hp: 32, speed: 180, damage: 8, attackType: 'melee' },
+      boss: { name: 'Warden', sprite: null, size: 118, hp: 1500, speed: 120, damage: 13, attackType: 'pump' },
     },
     gameplay: {
       hostageDistance: 5200,
@@ -224,7 +229,13 @@ export function validateConfig(input) {
     checkKeys(ch, ['name', ...ROLE_FIELDS[role]], `characters.${role}`, errors);
     const out = { name: readText(ch.name, `characters.${role}.name`, MAX_NAME_LENGTH, true, errors) };
     for (const field of ROLE_FIELDS[role]) {
-      out[field] = readNumber(ch[field], `characters.${role}.${field}`, CHARACTER_FIELDS[field], errors);
+      const spec = CHARACTER_FIELDS[field];
+      if (spec.options) {
+        if (!spec.options.includes(ch[field])) errors.push(`characters.${role}.${field}: invalid choice`);
+        out[field] = ch[field];
+      } else {
+        out[field] = readNumber(ch[field], `characters.${role}.${field}`, spec, errors);
+      }
     }
     value.characters[role] = out;
   }

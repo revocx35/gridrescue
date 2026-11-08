@@ -34,6 +34,8 @@ function upgrade(stored) {
     characters: {},
   };
   for (const role of ROLES) merged.characters[role] = { ...base.characters[role], ...stored.characters?.[role] };
+  // Before there were two joysticks the single one could be centred.
+  if (merged.site.joystickSide === 'center') merged.site.joystickSide = 'left';
   return merged;
 }
 
