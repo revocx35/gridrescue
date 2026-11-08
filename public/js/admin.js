@@ -1,11 +1,11 @@
 // Admin editor. All values are placed with textContent/value, never as HTML.
+import { ImageConversionError, imageToPng } from './image-convert.js';
 import { defaultSprite } from './render.js';
 import {
   CHARACTER_FIELDS, GAMEPLAY_FIELDS, MAX_NAME_LENGTH, ORDER_FIELDS, ORDER_LABELS, ROLES, ROLE_FIELDS, ROLE_LABELS,
   SITE_CHOICE_FIELDS, SITE_COLOR_FIELDS, SITE_NUMBER_FIELDS, SITE_TEXT_FIELDS,
 } from './schema.js';
 
-const MAX_UPLOAD = 2 * 1024 * 1024;
 const $ = (id) => document.getElementById(id);
 
 function el(tag, props = {}, ...children) {
@@ -72,10 +72,11 @@ async function api(method, url, body, contentType = 'application/json') {
 }
 
 function explain(error) {
+  if (error instanceof ImageConversionError) return error.message;
   if (error.status === 401) return 'Your session has expired. Open this page in a new tab and sign in, then save again.';
   if (error.status === 409) return 'Someone else changed the settings. Reload the page to get the latest version.';
-  if (error.status === 413) return 'That file is too large. The limit is 2 MB.';
-  if (error.status === 422 && error.message === 'invalid_png') return 'Sprites must be PNG files, up to 2048 by 2048 pixels. That file is not one.';
+  if (error.status === 413) return 'That image is too large.';
+  if (error.status === 422 && error.message === 'invalid_png') return 'The server could not accept that image. Try a different file.';
   if (error.status === 422) return `Please fix: ${(error.details ?? []).join('; ')}`;
   if (error.status === 429) return 'Too many changes in a short time. Wait a minute and try again.';
   return 'Something went wrong. Please try again.';
@@ -116,10 +117,11 @@ function spriteCanvas(role) {
 }
 
 async function uploadSprite(role, file) {
-  if (file.size > MAX_UPLOAD) return setStatus('That file is too large. The limit is 2 MB.', 'error');
-  setStatus(`Uploading ${file.name}…`);
+  setStatus(`Preparing ${file.name}…`);
   try {
-    adoptServerState(await api('PUT', `/api/admin/sprites/${role}`, file, 'image/png'), { keepDraft: true });
+    const png = await imageToPng(file);
+    setStatus(`Uploading ${file.name}…`);
+    adoptServerState(await api('PUT', `/api/admin/sprites/${role}`, png, 'image/png'), { keepDraft: true });
     renderCharacters();
     setStatus(`Sprite updated for ${draft.characters[role].name}.${dirty ? ' You still have unsaved changes.' : ''}`, 'good');
   } catch (error) {
@@ -144,11 +146,11 @@ function characterCard(role) {
     type: 'file', class: 'visually-hidden',
     on: { change: (e) => { if (e.target.files[0]) uploadSprite(role, e.target.files[0]); e.target.value = ''; } },
   });
-  fileInput.setAttribute('aria-label', `Upload a PNG file for ${ROLE_LABELS[role]}`);
+  fileInput.setAttribute('aria-label', `Upload an image for ${ROLE_LABELS[role]}`);
   const side = el(
     'div', { class: 'char-side' },
     spriteCanvas(role),
-    el('span', { class: 'micro sprite-state', textContent: sprites[role] ? 'Your PNG' : 'Default art' }),
+    el('span', { class: 'micro sprite-state', textContent: sprites[role] ? 'Your image' : 'Default art' }),
     el('button', { class: 'btn', type: 'button', textContent: 'Upload file', on: { click: () => fileInput.click() } }),
     fileInput,
   );

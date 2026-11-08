@@ -16,6 +16,7 @@ public/js/render.js                Canvas drawing and the built-in default art
 public/js/joystick.js              Pointer Events joystick
 public/js/schema.js                Editable config: defaults, limits, validation. Shared by server and admin UI
 public/admin.html, js/admin.js     Admin editor
+public/js/image-convert.js         Converts any browser-readable image to a size-limited PNG before upload
 src/server.js                      Entry point: reads the environment
 src/app.js                         Fastify routes, security headers, auth checks
 src/oidc.js                        OpenID Connect client (authorization code + PKCE)
@@ -70,6 +71,10 @@ docker compose up -d --build  # deploy
 - `node --test test/` tries to run the directory as a module. Use the glob in `npm test`.
 - The container has a read-only root; anything written must go to `/data` or `/tmp`.
 - The sprite file input has no `accept` filter on purpose: phones would open the photo picker instead of their file
-  browser, and some Android file providers report no MIME type. The server's `sanitizePng` decides what is a PNG.
+  browser, and some Android file providers report no MIME type. Whether a file is an image is decided by trying to
+  decode it in the browser (`image-convert.js`).
+- Any image format is converted to PNG in the admin's browser, so formats depend on that browser (HEIC opens in Safari,
+  usually not in Chrome). Do not add server-side image decoders for this: the server accepting only sanitised PNG is a
+  security property.
 - nginx cannot verify IP SANs, so a proxy pinning the upstream certificate must use `proxy_ssl_name localhost`.
 - `@fastify/rate-limit` counts `/auth/*` separately. Scripted sign-in tests hit the limit quickly.

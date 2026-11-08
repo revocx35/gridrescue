@@ -55,6 +55,9 @@ beside the game because there is not enough height to stack it.
 - **Sessions in memory.** One instance, a handful of admins; a restart costing a re-login is cheaper than a session store.
 - **JSON file, not a database.** One small document, written rarely, by one process.
 - **Raw PNG `PUT`, no multipart.** Smaller attack surface and one fewer dependency.
+- **Any image format, converted in the browser.** The admin's browser decodes JPG, WebP, GIF, SVG and so on, draws it to a
+  canvas and uploads a PNG of at most 1024 px. Native image decoders are a classic attack surface, so the server never
+  runs one; it only parses and rebuilds PNG. An animated image keeps its first frame.
 - **Content-addressed sprites** can be cached forever, and two roles may share one file.
 - **Auto-fire.** Keeps the mobile layout to a joystick alone, as specified.
 - **Shared `schema.js`** so server validation and admin form limits cannot drift apart.

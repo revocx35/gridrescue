@@ -6,7 +6,7 @@ joystick on phones.
 
 Nobody needs an account to play. An admin signs in through [Authentik](https://goauthentik.io/) to edit the game:
 
-- the name and PNG sprite of all six characters (player, companion, hostage, enemy 1, enemy 2, enemy 3 the boss)
+- the name and image of all six characters (player, companion, hostage, enemy 1, enemy 2, enemy 3 the boss)
 - the site menu: game title, tagline, button and end-screen text, colours, page order for desktop and mobile,
   joystick size and position
 - gameplay numbers: health, speed, damage, spawn rates, how far away the hostage is and how wide the hint is
@@ -43,7 +43,8 @@ You need Docker with Compose and an Authentik instance.
 
 5. Point your reverse proxy at `https://<this machine>:8443` and open `<your address>/admin` to sign in.
 
-Names, images and settings live in the `data` volume and survive upgrades.
+Names, images and settings live in the `data` volume and survive upgrades. Any image the admin's browser can open
+(JPG, PNG, WebP, GIF, SVG and others) can be used as a sprite; it is converted to a PNG of at most 1024 px on upload.
 
 ### Reverse proxy
 
