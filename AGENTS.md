@@ -69,4 +69,5 @@ docker compose up -d --build  # deploy
 - `@fastify/static`'s `setHeaders` receives a Fastify reply, not a raw response.
 - `node --test test/` tries to run the directory as a module. Use the glob in `npm test`.
 - The container has a read-only root; anything written must go to `/data` or `/tmp`.
+- nginx cannot verify IP SANs, so a proxy pinning the upstream certificate must use `proxy_ssl_name localhost`.
 - `@fastify/rate-limit` counts `/auth/*` separately. Scripted sign-in tests hit the limit quickly.

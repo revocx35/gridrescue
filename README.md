@@ -43,8 +43,24 @@ You need Docker with Compose and an Authentik instance.
 
 5. Point your reverse proxy at `https://<this machine>:8443` and open `<your address>/admin` to sign in.
 
-The container speaks HTTPS with a self-signed certificate, meant to be pinned by the reverse proxy
-(`certs/tls.crt`). Names, images and settings live in the `data` volume and survive upgrades.
+Names, images and settings live in the `data` volume and survive upgrades.
+
+### Reverse proxy
+
+The container speaks HTTPS with a self-signed certificate, which the proxy should pin. For nginx or Nginx Proxy
+Manager (advanced config), after copying `certs/tls.crt` somewhere nginx can read it:
+
+```nginx
+client_max_body_size 4m;
+proxy_ssl_verify on;
+proxy_ssl_trusted_certificate /path/to/tls.crt;
+proxy_ssl_name localhost;
+proxy_ssl_server_name on;
+```
+
+`proxy_ssl_name localhost` is deliberate: nginx cannot check IP entries in a certificate, and only the pinned
+certificate is trusted anyway. Do not put authentication in front of the site, because the game is public; the app
+protects `/admin` itself. Also restrict the published port so that only the proxy can reach it.
 
 ## Develop
 

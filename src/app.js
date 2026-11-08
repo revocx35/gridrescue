@@ -92,7 +92,7 @@ export async function createApp(options) {
 
   // ---- public ----
 
-  app.get('/healthz', { config: { rateLimit: false } }, async () => ({ ok: true }));
+  app.get('/healthz', { config: { rateLimit: false }, logLevel: 'warn' }, async () => ({ ok: true }));
 
   app.get('/api/config', async (request, reply) => {
     reply.header('Cache-Control', 'no-cache');
