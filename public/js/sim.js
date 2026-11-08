@@ -11,6 +11,11 @@ const RANGED = {
   sniper: { range: 540, interval: 2.4, windup: 0.5, pellets: 1, spread: 0, speed: 640, ttl: 1.3, r: 6, retreat: true },
   pump: { range: 250, interval: 1.7, windup: 0.25, pellets: 5, spread: 0.17, speed: 430, ttl: 0.75, r: 7, retreat: false },
 };
+const ORB_MAGNET = 150;
+const ORB_PICKUP = 26;
+const ORB_SPEED = 560;
+const MAX_COMPANIONS = 6;
+const PLAYER_PUMP = { pellets: 5, spread: 0.15, ttl: 0.46, damageFactor: 0.55, intervalFactor: 1.7 };
 export const CELL_SIZE = 80;
 
 const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
@@ -42,9 +47,12 @@ export function createGame(cfg, { rng = Math.random, view = { halfW: 500, halfH:
     status: 'playing',
     time: 0, kills: 0, spawnT: 1.4, grace: 0,
     player: actor(0, 0, c.player),
-    companion: null,
+    companions: [],
+    naturalCompanion: false,
     hostage, boss,
-    enemies: [], shots: [], bullets: [],
+    enemies: [], shots: [], bullets: [], orbs: [],
+    xp: 0,
+    gun: { bonusDamage: 0, pierce: 0, pump: false },
     hint: null,
     events: [],
   };
@@ -68,33 +76,54 @@ function nearestEnemy(s, from, range) {
   return best;
 }
 
-function fireAt(s, shooter, ch, dt) {
+/** The player's current gun, after upgrades. */
+function playerWeapon(s) {
+  const ch = s.cfg.characters.player;
+  const { bonusDamage, pierce, pump } = s.gun;
+  const damage = ch.damage + bonusDamage;
+  if (!pump) return { damage, fireInterval: ch.fireInterval, pierce };
+  return {
+    damage: damage * PLAYER_PUMP.damageFactor,
+    fireInterval: ch.fireInterval * PLAYER_PUMP.intervalFactor,
+    pierce,
+    pellets: PLAYER_PUMP.pellets,
+    spread: PLAYER_PUMP.spread,
+    ttl: PLAYER_PUMP.ttl,
+  };
+}
+
+function fireAt(s, shooter, weapon, dt) {
   shooter.cool -= dt;
   if (shooter.cool > 0) return;
-  const target = nearestEnemy(s, shooter, s.cfg.gameplay.attackRange);
+  const reach = weapon.ttl ? weapon.ttl * SHOT_SPEED : Infinity;
+  const target = nearestEnemy(s, shooter, Math.min(s.cfg.gameplay.attackRange, reach));
   if (!target) return;
-  shooter.cool = ch.fireInterval;
+  shooter.cool = weapon.fireInterval;
   const lead = dist(shooter, target) / SHOT_SPEED;
   const dx = target.x + target.vx * lead - shooter.x;
   const dy = target.y + target.vy * lead - shooter.y;
-  const d = Math.hypot(dx, dy) || 1;
-  pushShot(s, shooter, ch, dx / d, dy / d);
+  pushShots(s, shooter, weapon, Math.atan2(dy, dx));
 }
 
-function pushShot(s, shooter, ch, dirX, dirY) {
-  s.shots.push({
-    x: shooter.x, y: shooter.y,
-    vx: dirX * SHOT_SPEED, vy: dirY * SHOT_SPEED,
-    ttl: 0.95, damage: ch.damage, ally: shooter !== s.player,
-  });
+function pushShots(s, shooter, weapon, angle) {
+  const pellets = weapon.pellets ?? 1;
+  for (let i = 0; i < pellets; i++) {
+    const a = angle + (i - (pellets - 1) / 2) * (weapon.spread ?? 0);
+    s.shots.push({
+      x: shooter.x, y: shooter.y,
+      vx: Math.cos(a) * SHOT_SPEED, vy: Math.sin(a) * SHOT_SPEED,
+      ttl: weapon.ttl ?? 0.95, damage: weapon.damage, ally: shooter !== s.player,
+      pierce: weapon.pierce ?? 0,
+    });
+  }
 }
 
 /** Aim stick held: fire that way even with no enemy in range. */
-function fireAimed(s, shooter, ch, aim, dt) {
+function fireAimed(s, shooter, weapon, aim, dt) {
   shooter.cool -= dt;
   if (shooter.cool > 0) return;
-  shooter.cool = ch.fireInterval;
-  pushShot(s, shooter, ch, aim.x, aim.y);
+  shooter.cool = weapon.fireInterval;
+  pushShots(s, shooter, weapon, Math.atan2(aim.y, aim.x));
 }
 
 /** A lit wedge that contains the hostage's real direction without being centred on it. */
@@ -112,6 +141,8 @@ function killEnemy(s, e) {
   const heal = e.kind === 'enemy1' ? 12 : 3;
   s.player.hp = Math.min(s.player.maxHp, s.player.hp + heal);
   emit(s, 'kill', { x: e.x, y: e.y, kind: e.kind });
+  const xp = s.cfg.characters[e.kind].xp;
+  if (xp > 0) s.orbs.push({ x: e.x, y: e.y, xp });
   lightHint(s);
 }
 
@@ -144,8 +175,7 @@ function hurtPlayer(s, damage) {
   }
 }
 
-function hurtCompanion(s, damage) {
-  const m = s.companion;
+function hurtCompanion(s, m, damage) {
   m.hp -= damage;
   m.flash = 0.14;
   if (m.hp <= 0) {
@@ -189,17 +219,21 @@ function updateSpawning(s, dt) {
   if (s.enemies.length < s.cfg.gameplay.maxEnemies) spawnEnemy(s);
 }
 
-function maybeSpawnCompanion(s) {
-  if (s.companion) return;
-  const g = s.cfg.gameplay;
-  if (s.kills < g.companionKills && dist(s.player, s.hostage) > g.companionDistance) return;
-  s.companion = { ...actor(s.player.x - 60, s.player.y + 40, s.cfg.characters.companion), down: 0 };
-  emit(s, 'companion', { x: s.companion.x, y: s.companion.y });
+function addCompanion(s) {
+  const m = { ...actor(s.player.x - 60, s.player.y + 40, s.cfg.characters.companion), down: 0 };
+  s.companions.push(m);
+  emit(s, 'companion', { x: m.x, y: m.y });
 }
 
-function updateCompanion(s, dt) {
-  const m = s.companion;
-  if (!m) return;
+function maybeSpawnCompanion(s) {
+  if (s.naturalCompanion) return;
+  const g = s.cfg.gameplay;
+  if (s.kills < g.companionKills && dist(s.player, s.hostage) > g.companionDistance) return;
+  s.naturalCompanion = true;
+  addCompanion(s);
+}
+
+function updateCompanion(s, m, index, dt) {
   const ch = s.cfg.characters.companion;
   if (m.down > 0) {
     m.down -= dt;
@@ -213,10 +247,13 @@ function updateCompanion(s, dt) {
     return;
   }
   m.flash = Math.max(0, m.flash - dt);
-  const away = dist(m, s.player);
-  const follow = away > 90 ? Math.min(1, (away - 90) / 80) : 0;
-  const dx = (s.player.x - m.x) / (away || 1);
-  const dy = (s.player.y - m.y) / (away || 1);
+  // Companions spread around the player instead of stacking on one spot.
+  const slot = (index / s.companions.length) * TAU + Math.PI * 0.75;
+  const post = { x: s.player.x + Math.cos(slot) * 90, y: s.player.y + Math.sin(slot) * 90 };
+  const away = dist(m, post);
+  const follow = Math.min(1, away / 80);
+  const dx = (post.x - m.x) / (away || 1);
+  const dy = (post.y - m.y) / (away || 1);
   m.vx = dx * ch.speed * follow;
   m.vy = dy * ch.speed * follow;
   m.x += m.vx * dt;
@@ -226,9 +263,14 @@ function updateCompanion(s, dt) {
 }
 
 function chaseTarget(s, e) {
-  const m = s.companion;
-  if (m && !m.down && dist(e, m) * 1.25 < dist(e, s.player)) return m;
-  return s.player;
+  let best = s.player;
+  let bestD = dist(e, s.player);
+  for (const m of s.companions) {
+    if (m.down) continue;
+    const d = dist(e, m) * 1.25;
+    if (d < bestD) { best = m; bestD = d; }
+  }
+  return best;
 }
 
 /** Ranged enemies only shoot from where the player can see them. */
@@ -302,7 +344,7 @@ function updateEnemies(s, dt) {
     if (e.cool <= 0 && d < e.r + target.r) {
       e.cool = 0.75;
       if (target === s.player) hurtPlayer(s, e.damage);
-      else hurtCompanion(s, e.damage);
+      else hurtCompanion(s, target, e.damage);
     }
   }
 }
@@ -413,10 +455,10 @@ function updateBoss(s, dt) {
     b.cool = 0.75;
     hurtPlayer(s, ch.damage * 1.6);
   }
-  const m = s.companion;
-  if (m && !m.down && b.cool <= 0 && dist(b, m) < b.r + m.r) {
+  for (const m of s.companions) {
+    if (m.down || b.cool > 0 || dist(b, m) >= b.r + m.r) continue;
     b.cool = 0.75;
-    hurtCompanion(s, ch.damage * 1.6);
+    hurtCompanion(s, m, ch.damage * 1.6);
   }
 }
 
@@ -426,19 +468,20 @@ function updateShots(s, dt) {
     p.x += p.vx * dt;
     p.y += p.vy * dt;
     p.ttl -= dt;
-    let hit = false;
-    for (let j = s.enemies.length - 1; j >= 0 && !hit; j--) {
+    // A shot stops at its first enemy unless it still has pierce left, and hits each enemy once.
+    let spent = false;
+    const strike = (e) => {
+      (p.struck ??= new Set()).add(e);
+      if ((p.pierce ?? 0) > 0) p.pierce -= 1;
+      else spent = true;
+      return hurtEnemy(s, e, p.damage);
+    };
+    for (let j = s.enemies.length - 1; j >= 0 && !spent; j--) {
       const e = s.enemies[j];
-      if (dist(p, e) < e.r + 6) {
-        hit = true;
-        if (hurtEnemy(s, e, p.damage)) s.enemies.splice(j, 1);
-      }
+      if (!p.struck?.has(e) && dist(p, e) < e.r + 6 && strike(e)) s.enemies.splice(j, 1);
     }
-    if (!hit && s.boss.alive && dist(p, s.boss) < s.boss.r + 6) {
-      hit = true;
-      hurtEnemy(s, s.boss, p.damage);
-    }
-    if (hit || p.ttl <= 0) s.shots.splice(i, 1);
+    if (!spent && s.boss.alive && !p.struck?.has(s.boss) && dist(p, s.boss) < s.boss.r + 6) strike(s.boss);
+    if (spent || p.ttl <= 0) s.shots.splice(i, 1);
   }
 }
 
@@ -452,12 +495,67 @@ function updateBullets(s, dt) {
     if (dist(b, s.player) < b.r + s.player.r) {
       hurtPlayer(s, b.damage);
       hit = true;
-    } else if (s.companion && !s.companion.down && dist(b, s.companion) < b.r + s.companion.r) {
-      hurtCompanion(s, b.damage * 0.6);
-      hit = true;
+    } else {
+      const m = s.companions.find((c) => !c.down && dist(b, c) < b.r + c.r);
+      if (m) {
+        hurtCompanion(s, m, b.damage * 0.6);
+        hit = true;
+      }
     }
     if (hit || b.ttl <= 0) s.bullets.splice(i, 1);
   }
+}
+
+function checkLevelUp(s) {
+  const need = s.cfg.gameplay.xpToUpgrade;
+  if (s.status !== 'playing' || s.xp < need) return;
+  s.xp -= need;
+  s.status = 'levelup';
+  emit(s, 'levelUp');
+}
+
+function updateOrbs(s, dt) {
+  const p = s.player;
+  for (let i = s.orbs.length - 1; i >= 0; i--) {
+    const o = s.orbs[i];
+    const d = dist(o, p);
+    if (d > DESPAWN_DISTANCE) {
+      s.orbs.splice(i, 1);
+    } else if (d < p.r + ORB_PICKUP) {
+      s.xp += o.xp;
+      s.orbs.splice(i, 1);
+      emit(s, 'xp', { x: o.x, y: o.y });
+    } else if (d < ORB_MAGNET) {
+      o.x += ((p.x - o.x) / d) * ORB_SPEED * dt;
+      o.y += ((p.y - o.y) / d) * ORB_SPEED * dt;
+    }
+  }
+  checkLevelUp(s);
+}
+
+/** The upgrades on offer right now. */
+export function availableUpgrades(s) {
+  const ids = ['damage', 'health', 'companion', 'pierce'];
+  if (s.companions.length >= MAX_COMPANIONS) ids.splice(ids.indexOf('companion'), 1);
+  if (!s.gun.pump) ids.unshift('pump');
+  return ids;
+}
+
+/** Applies a choice from the level-up menu and resumes the game. Returns false if it was not on offer. */
+export function applyUpgrade(s, id) {
+  if (s.status !== 'levelup' || !availableUpgrades(s).includes(id)) return false;
+  const g = s.cfg.gameplay;
+  if (id === 'pump') s.gun.pump = true;
+  if (id === 'damage') s.gun.bonusDamage += g.upgradeDamage;
+  if (id === 'pierce') s.gun.pierce += 1;
+  if (id === 'companion') addCompanion(s);
+  if (id === 'health') {
+    s.player.maxHp += g.upgradeHealth;
+    s.player.hp += g.upgradeHealth;
+  }
+  s.status = 'playing';
+  checkLevelUp(s); // XP left over can already pay for the next one
+  return true;
 }
 
 function updateRescue(s) {
@@ -502,12 +600,14 @@ export function step(s, dt, input) {
 
   maybeSpawnCompanion(s);
   updateSpawning(s, dt);
-  if (p.aim) fireAimed(s, p, ch, p.aim, dt);
-  else fireAt(s, p, ch, dt);
-  updateCompanion(s, dt);
+  const weapon = playerWeapon(s);
+  if (p.aim) fireAimed(s, p, weapon, p.aim, dt);
+  else fireAt(s, p, weapon, dt);
+  s.companions.forEach((m, index) => updateCompanion(s, m, index, dt));
   updateEnemies(s, dt);
   updateBoss(s, dt);
   updateShots(s, dt);
   updateBullets(s, dt);
+  if (s.status === 'playing') updateOrbs(s, dt);
   if (s.status === 'playing') updateRescue(s);
 }

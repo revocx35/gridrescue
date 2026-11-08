@@ -39,6 +39,9 @@ describe('config validation', () => {
   rejects('an unknown attack type', (c) => { c.characters.enemy1.attackType = 'laser'; });
   rejects('an attack type on the player', (c) => { c.characters.player.attackType = 'melee'; });
   rejects('a centred joystick', (c) => { c.site.joystickSide = 'center'; });
+  rejects('negative XP', (c) => { c.characters.enemy1.xp = -1; });
+  rejects('XP on the boss', (c) => { c.characters.boss.xp = 10; });
+  rejects('a zero upgrade threshold', (c) => { c.gameplay.xpToUpgrade = 0; });
 
   it('trims names', () => {
     const config = editable();
@@ -194,6 +197,11 @@ describe('config upgrades', () => {
     const ctx = await makeApp();
     const old = defaultConfig();
     for (const role of ['enemy1', 'enemy2', 'boss']) delete old.characters[role].attackType;
+    delete old.characters.enemy1.xp;
+    delete old.characters.enemy2.xp;
+    delete old.gameplay.xpToUpgrade;
+    delete old.gameplay.upgradeDamage;
+    delete old.gameplay.upgradeHealth;
     old.site.joystickSide = 'center';
     old.site.title = 'Saved title';
     old.characters.player.name = 'Saved name';
@@ -208,6 +216,9 @@ describe('config upgrades', () => {
     assert.equal(config.characters.player.sprite, 'a'.repeat(64));
     assert.equal(config.characters.enemy1.attackType, 'melee');
     assert.equal(config.characters.boss.attackType, 'pump');
+    assert.equal(config.characters.enemy1.xp, 10);
+    assert.equal(config.characters.enemy2.xp, 40);
+    assert.equal(config.gameplay.xpToUpgrade, 200);
     assert.equal(fs.readdirSync(ctx.dir).some((name) => name.includes('.corrupt-')), false);
     await ctx.close();
   });

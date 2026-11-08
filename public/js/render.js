@@ -353,6 +353,29 @@ export class Renderer {
     ctx.restore();
   }
 
+  #drawOrbs(ctx, s) {
+    const { accent } = this.config.site.colors;
+    ctx.save();
+    ctx.fillStyle = accent;
+    for (const o of s.orbs) {
+      if (!this.#visible(o)) continue;
+      const r = (o.xp >= 40 ? 10 : 7) + Math.sin(this.clock * 6 + o.x) * 1.2;
+      ctx.globalAlpha = 0.28;
+      ctx.beginPath();
+      ctx.arc(o.x, o.y, r * 1.9, 0, TAU);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+      ctx.beginPath();
+      ctx.moveTo(o.x, o.y - r);
+      ctx.lineTo(o.x + r * 0.8, o.y);
+      ctx.lineTo(o.x, o.y + r);
+      ctx.lineTo(o.x - r * 0.8, o.y);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
   #drawAimLines(ctx, s) {
     ctx.save();
     ctx.lineCap = 'round';
@@ -430,6 +453,8 @@ export class Renderer {
     this.#drawHintBeam(ctx, s);
     this.#drawArena(ctx, s);
 
+    this.#drawOrbs(ctx, s);
+
     const walk = Math.sin(this.clock * 13) * 2;
     if (this.#visible(s.hostage)) {
       this.#drawActor(ctx, 'hostage', { ...s.hostage, face: 1, flash: 0 }, characters.hostage.size, Math.sin(this.clock * 4) * 1.5);
@@ -453,8 +478,8 @@ export class Renderer {
       }
       this.#drawActor(ctx, 'boss', s.boss, characters.boss.size);
     }
-    if (s.companion && !s.companion.down) {
-      this.#drawActor(ctx, 'companion', s.companion, characters.companion.size, walk * 0.7);
+    for (const m of s.companions) {
+      if (!m.down) this.#drawActor(ctx, 'companion', m, characters.companion.size, walk * 0.7);
     }
     this.#drawAimLines(ctx, s);
     this.#drawActor(ctx, 'player', s.player, characters.player.size, Math.hypot(s.player.vx, s.player.vy) > 5 ? walk : 0);
@@ -514,8 +539,8 @@ export class Renderer {
     if (this.#visible(s.hostage)) {
       this.#label(ctx, characters.hostage.name, s.hostage.x, s.hostage.y - characters.hostage.size / 2 - 32, '#ffd9a8', 13);
     }
-    if (s.companion && !s.companion.down) {
-      this.#label(ctx, characters.companion.name, s.companion.x, s.companion.y - characters.companion.size / 2 - 7, '#b7f7c4');
+    for (const m of s.companions) {
+      if (!m.down) this.#label(ctx, characters.companion.name, m.x, m.y - characters.companion.size / 2 - 7, '#b7f7c4');
     }
     this.#label(ctx, characters.player.name, s.player.x, s.player.y - characters.player.size / 2 - 7, '#fff');
   }

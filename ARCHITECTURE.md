@@ -36,6 +36,12 @@ are deleted on every commit. A monotonically increasing `revision` gives optimis
   the player's view and do no contact damage.
 - The boss's attack type replaces its primary attack: pump is the fan plus the ring, sniper is single fast bullets, and
   melee fires nothing but charges more often. All three keep the charge.
+- Destroyed regular enemies drop XP orbs (`xp` per role). Orbs drift to a nearby player and vanish if left far behind. At
+  `xpToUpgrade` the state becomes `levelup`, which `step` ignores, so the world is truly frozen until `applyUpgrade`. XP
+  over the threshold carries over and can open the menu again at once.
+- Upgrades belong to the run (`s.gun`, `s.companions`, `player.maxHp`) and never change the admin's config: pump gun, more
+  damage, more health, one more companion (at most six), and bullets piercing one more enemy. Companions keep their own
+  plain gun.
 - The boss sleeps until the player enters the arena or shoots it, cannot leave the arena, and heals if the player
   runs far enough to make it go home. Under half health its attacks speed up.
 - The game is won only by touching the hostage after the boss is dead, and lost at zero player health.

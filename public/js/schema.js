@@ -18,8 +18,8 @@ export const ROLE_FIELDS = {
   player: [...COMBAT, 'fireInterval'],
   companion: [...COMBAT, 'fireInterval'],
   hostage: ['size'],
-  enemy1: [...COMBAT, 'attackType'],
-  enemy2: [...COMBAT, 'attackType'],
+  enemy1: [...COMBAT, 'xp', 'attackType'],
+  enemy2: [...COMBAT, 'xp', 'attackType'],
   boss: [...COMBAT, 'attackType'],
 };
 
@@ -29,6 +29,7 @@ export const CHARACTER_FIELDS = {
   speed: { label: 'Speed', min: 0, max: 800, step: 1 },
   damage: { label: 'Damage', min: 0, max: 5000, step: 1 },
   fireInterval: { label: 'Seconds between shots', min: 0.05, max: 5, step: 0.01 },
+  xp: { label: 'XP dropped', min: 0, max: 100000, step: 1 },
   attackType: {
     label: 'Attack type',
     options: ['melee', 'sniper', 'pump'],
@@ -47,6 +48,9 @@ export const GAMEPLAY_FIELDS = {
   maxEnemies: { label: 'Most enemies at once', min: 1, max: 120, step: 1 },
   attackRange: { label: 'Auto-attack range', min: 100, max: 1500, step: 10 },
   arenaRadius: { label: 'Boss arena radius', min: 250, max: 2000, step: 10 },
+  xpToUpgrade: { label: 'XP needed for each upgrade', min: 1, max: 100000, step: 1 },
+  upgradeDamage: { label: 'Damage added by the upgrade', min: 1, max: 5000, step: 1 },
+  upgradeHealth: { label: 'Health added by the upgrade', min: 1, max: 100000, step: 1 },
 };
 
 export const SITE_TEXT_FIELDS = {
@@ -114,8 +118,8 @@ export function defaultConfig() {
       player: { name: 'Runner', sprite: null, size: 46, hp: 100, speed: 255, damage: 18, fireInterval: 0.26 },
       companion: { name: 'Scout', sprite: null, size: 40, hp: 80, speed: 285, damage: 10, fireInterval: 0.4 },
       hostage: { name: 'Hostage', sprite: null, size: 44 },
-      enemy1: { name: 'Brute', sprite: null, size: 62, hp: 130, speed: 135, damage: 20, attackType: 'melee' },
-      enemy2: { name: 'Stalker', sprite: null, size: 36, hp: 32, speed: 180, damage: 8, attackType: 'melee' },
+      enemy1: { name: 'Brute', sprite: null, size: 62, hp: 130, speed: 135, damage: 20, xp: 10, attackType: 'melee' },
+      enemy2: { name: 'Stalker', sprite: null, size: 36, hp: 32, speed: 180, damage: 8, xp: 40, attackType: 'melee' },
       boss: { name: 'Warden', sprite: null, size: 118, hp: 1500, speed: 120, damage: 13, attackType: 'pump' },
     },
     gameplay: {
@@ -129,6 +133,9 @@ export function defaultConfig() {
       maxEnemies: 36,
       attackRange: 450,
       arenaRadius: 560,
+      xpToUpgrade: 200,
+      upgradeDamage: 20,
+      upgradeHealth: 20,
     },
   };
 }

@@ -49,6 +49,8 @@ docker compose up -d --build  # deploy
   and inline scripts are blocked by CSP.
 - Keep the UI language in plain words; the visual language is near-black, radial washes, a brand gradient, 14 px
   translucent panels and uppercase micro-labels.
+- Upgrades live in the run state, never in `s.cfg`. Tests and live code both read base stats from `s.cfg` at fire time.
+- Only `Game.onKey`'s level-up branch may handle keys during the menu: Enter must never reach the restart path.
 - Sprites only change through `/api/admin/sprites/:role`. `PUT /api/admin/config` rejects a `sprite` key on purpose.
 
 ## Never do

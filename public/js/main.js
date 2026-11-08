@@ -2,7 +2,7 @@
 import { Joystick } from './joystick.js';
 import { Renderer, drawSpriteInBox, loadSprites } from './render.js';
 import { ROLES } from './schema.js';
-import { createGame, step } from './sim.js';
+import { applyUpgrade, availableUpgrades, createGame, step } from './sim.js';
 
 const FIXED_STEP = 1 / 60;
 const $ = (id) => document.getElementById(id);
@@ -155,6 +155,11 @@ class Game {
   }
 
   onKey(e) {
+    if (this.mode === 'levelup') {
+      const choice = /^Digit([1-5])$/.exec(e.code);
+      if (choice) $('upgrades').children[Number(choice[1]) - 1]?.click();
+      return; // Enter and Space act on the focused upgrade; nothing else may restart the game
+    }
     if (e.code === 'Escape' || e.code === 'KeyP') {
       if (this.mode === 'playing') this.pause();
       else if (this.mode === 'paused') this.resume();
@@ -169,14 +174,55 @@ class Game {
     else this.start();
   }
 
-  overlay({ heading, text, action, roster = false }) {
+  overlay({ heading, text, action, roster = false, upgrades = false }) {
     $('overlay-heading').textContent = heading;
     $('overlay-text').textContent = text;
-    $('overlay-action').textContent = action;
+    $('overlay-action').textContent = action ?? '';
+    $('overlay-action').hidden = upgrades;
+    $('upgrades').hidden = !upgrades;
     $('roster').hidden = !roster;
     $('controls-hint').hidden = !roster;
     $('overlay').hidden = false;
-    $('overlay-action').focus({ preventScroll: true, focusVisible: false });
+    const first = upgrades ? $('upgrades').firstElementChild : $('overlay-action');
+    first.focus({ preventScroll: true, focusVisible: false });
+  }
+
+  upgradeLabel(id) {
+    const { upgradeDamage, upgradeHealth } = this.config.gameplay;
+    return {
+      pump: 'Change gun to pump',
+      damage: `Add ${upgradeDamage} damage`,
+      health: `Add ${upgradeHealth} health`,
+      companion: `Add 1 more ${this.names.companion}`,
+      pierce: 'Bullets pass through +1 enemy',
+    }[id];
+  }
+
+  showUpgrades() {
+    this.mode = 'levelup';
+    this.mouseAim.reset();
+    this.updateHud();
+    $('upgrades').replaceChildren(...availableUpgrades(this.state).map((id, index) => {
+      const key = document.createElement('span');
+      key.className = 'upgrade-key';
+      key.textContent = String(index + 1);
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'upgrade';
+      button.append(key, this.upgradeLabel(id));
+      button.addEventListener('click', () => this.chooseUpgrade(id));
+      return button;
+    }));
+    this.overlay({ heading: 'Level up', text: 'Choose one upgrade.', upgrades: true });
+  }
+
+  chooseUpgrade(id) {
+    if (!applyUpgrade(this.state, id)) return;
+    this.mode = 'playing';
+    this.accumulator = 0;
+    $('overlay').hidden = true;
+    document.activeElement?.blur?.();
+    for (const event of this.state.events.splice(0)) this.handleEvent(event);
   }
 
   showMenu() {
@@ -269,6 +315,9 @@ class Game {
       case 'hostageLocked':
         this.toast(`Defeat ${boss} to free ${hostage}`);
         break;
+      case 'levelUp':
+        this.showUpgrades();
+        break;
       case 'win':
         this.finish(true);
         break;
@@ -306,8 +355,15 @@ class Game {
     this.setBar('player-bar', s.player.hp / s.player.maxHp);
     this.setText('stat-kills', String(s.kills));
     this.setText('stat-time', formatTime(s.time));
-    $('companion-vital').hidden = !s.companion;
-    if (s.companion) this.setBar('companion-bar', s.companion.hp / s.companion.maxHp);
+    const need = this.config.gameplay.xpToUpgrade;
+    this.setBar('xp-bar', s.xp / need);
+    this.setText('xp-text', `${s.xp} / ${need}`);
+    const team = s.companions;
+    $('companion-vital').hidden = !team.length;
+    if (team.length) {
+      this.setText('companion-name', team.length > 1 ? `${this.names.companion} ×${team.length}` : this.names.companion);
+      this.setBar('companion-bar', team.reduce((sum, m) => sum + m.hp, 0) / team.reduce((sum, m) => sum + m.maxHp, 0));
+    }
     const showBoss = s.boss.alive && s.boss.mode !== 'idle';
     $('boss-vital').hidden = !showBoss;
     if (showBoss) this.setBar('boss-bar', s.boss.hp / s.boss.maxHp);
@@ -329,7 +385,7 @@ class Game {
       this.toastTimer -= dt;
       if (this.toastTimer <= 0) $('toast').hidden = true;
     }
-    this.renderer.draw(this.state, this.mode === 'paused' ? 0 : dt);
+    this.renderer.draw(this.state, this.mode === 'paused' || this.mode === 'levelup' ? 0 : dt);
     requestAnimationFrame((t) => this.frame(t));
   }
 }

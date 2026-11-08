@@ -10,6 +10,7 @@ Nobody needs an account to play. An admin signs in through [Authentik](https://g
 - the site menu: game title, tagline, button and end-screen text, colours, page order for desktop and mobile,
   joystick size and which side the movement stick is on
 - each enemy's attack type: melee, sniper (one bullet) or pump (spread)
+- XP dropped by each enemy, XP needed per upgrade, and how much the damage and health upgrades add
 - gameplay numbers: health, speed, damage, spawn rates, how far away the hostage is and how wide the hint is
 
 ## How it plays
@@ -20,6 +21,7 @@ Nobody needs an account to play. An admin signs in through [Authentik](https://g
 | Attack | Automatic: you and your companion fire at the nearest enemy in range. Hold the right joystick on phones, or the left mouse button on desktop, to aim yourself |
 | Find the hostage | Every enemy you destroy briefly lights a wedge of the grid. The hostage is somewhere inside it |
 | Companion | Joins after enough kills, or as you get close to the hostage, whichever comes first |
+| Upgrades | Destroyed enemies drop XP. Every 200 XP the game freezes and you pick one: pump gun, more damage, more health, one more companion, or bullets that pass through one more enemy |
 | Win | Defeat the boss, then reach the hostage |
 
 ## Run it

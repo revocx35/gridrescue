@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { defaultConfig } from '../public/js/schema.js';
-import { createGame, step } from '../public/js/sim.js';
+import { applyUpgrade, availableUpgrades, createGame, step } from '../public/js/sim.js';
 
 const DT = 1 / 60;
 
@@ -159,10 +159,10 @@ describe('companion', () => {
     s.spawnT = 1e9;
     s.kills = 1;
     step(s, DT, still);
-    assert.equal(s.companion, null);
+    assert.equal(s.companions.length, 0);
     s.kills = 2;
     step(s, DT, still);
-    assert.ok(s.companion);
+    assert.ok(s.companions[0]);
   });
 
   it('always joins before the player reaches the hostage', () => {
@@ -174,21 +174,21 @@ describe('companion', () => {
       s.player.hp = s.player.maxHp;
       step(s, DT, dir);
     }
-    assert.ok(s.companion);
+    assert.ok(s.companions[0]);
   });
 
   it('follows the player', () => {
     const s = game(4, (c) => { c.gameplay.companionKills = 0; });
     s.spawnT = 1e9;
     for (let i = 0; i < 60 * 4; i++) step(s, DT, { x: 1, y: 0 });
-    assert.ok(dist(s.companion, s.player) < 260);
+    assert.ok(dist(s.companions[0], s.player) < 260);
   });
 
   it('fights: it destroys an enemy on its own', () => {
     const s = game(4, (c) => { c.gameplay.companionKills = 0; c.characters.player.damage = 0; });
     s.spawnT = 1e9;
     step(s, DT, still);
-    const e = placeEnemy(s, 'enemy2', s.companion.x + 200, s.companion.y);
+    const e = placeEnemy(s, 'enemy2', s.companions[0].x + 200, s.companions[0].y);
     e.speed = 0;
     for (let i = 0; i < 60 * 6 && s.enemies.length; i++) step(s, DT, still);
     assert.equal(s.enemies.length, 0);
@@ -199,17 +199,17 @@ describe('companion', () => {
     const s = game(4, (c) => { c.gameplay.companionKills = 0; });
     s.spawnT = 1e9;
     step(s, DT, still);
-    s.companion.hp = 1;
-    placeEnemy(s, 'enemy2', s.companion.x, s.companion.y).speed = 0;
+    s.companions[0].hp = 1;
+    placeEnemy(s, 'enemy2', s.companions[0].x, s.companions[0].y).speed = 0;
     s.enemies[0].hp = 1e9;
-    s.player.x = s.companion.x + 300;
+    s.player.x = s.companions[0].x + 300;
     s.cfg.characters.player.damage = 0;
-    for (let i = 0; i < 30 && !s.companion.down; i++) step(s, DT, still);
-    assert.ok(s.companion.down > 0);
+    for (let i = 0; i < 30 && !s.companions[0].down; i++) step(s, DT, still);
+    assert.ok(s.companions[0].down > 0);
     s.enemies.length = 0;
     for (let i = 0; i < 60 * 10; i++) step(s, DT, still);
-    assert.equal(s.companion.down, 0);
-    assert.equal(s.companion.hp, s.companion.maxHp);
+    assert.equal(s.companions[0].down, 0);
+    assert.equal(s.companions[0].hp, s.companions[0].maxHp);
   });
 });
 
@@ -427,6 +427,255 @@ describe('enemy attack types', () => {
   });
 });
 
+describe('XP and upgrades', () => {
+  function quiet(edit) {
+    const s = game(1, edit);
+    s.spawnT = 1e9;
+    return s;
+  }
+  const levelUp = (s) => {
+    s.status = 'levelup';
+  };
+  const giveOrb = (s, xp) => s.orbs.push({ x: s.player.x, y: s.player.y, xp });
+
+  it('drops the configured XP where an enemy dies', () => {
+    const s = quiet();
+    placeEnemy(s, 'enemy1', 300, 0).hp = 1;
+    placeEnemy(s, 'enemy2', -300, 0).hp = 1;
+    s.enemies.forEach((e) => { e.speed = 0; });
+    for (let i = 0; i < 60 && s.enemies.length; i++) step(s, DT, still);
+    assert.deepEqual(s.orbs.map((o) => o.xp).sort((a, b) => a - b), [10, 40]);
+  });
+
+  it('defaults to 10 XP for enemy 1, 40 for enemy 2 and 200 per upgrade', () => {
+    const { characters, gameplay } = defaultConfig();
+    assert.equal(characters.enemy1.xp, 10);
+    assert.equal(characters.enemy2.xp, 40);
+    assert.equal(gameplay.xpToUpgrade, 200);
+  });
+
+  it('drops nothing when XP is set to zero', () => {
+    const s = quiet((c) => { c.characters.enemy2.xp = 0; });
+    const e = placeEnemy(s, 'enemy2', 120, 0);
+    e.hp = 1;
+    e.speed = 0;
+    for (let i = 0; i < 60 && s.enemies.length; i++) step(s, DT, still);
+    assert.equal(s.orbs.length, 0);
+  });
+
+  it('collects an orb on touch', () => {
+    const s = quiet();
+    giveOrb(s, 40);
+    step(s, DT, still);
+    assert.equal(s.xp, 40);
+    assert.equal(s.orbs.length, 0);
+  });
+
+  it('pulls in nearby orbs and leaves distant ones', () => {
+    const s = quiet();
+    s.orbs.push({ x: 120, y: 0, xp: 10 }, { x: 800, y: 0, xp: 10 });
+    for (let i = 0; i < 60; i++) step(s, DT, still);
+    assert.equal(s.xp, 10);
+    assert.equal(s.orbs.length, 1);
+  });
+
+  it('does not pay out XP for an orb the player ran away from', () => {
+    const s = quiet();
+    s.orbs.push({ x: 4000, y: 0, xp: 10 });
+    step(s, DT, still);
+    assert.equal(s.orbs.length, 0);
+    assert.equal(s.xp, 0);
+  });
+
+  it('freezes the game at the threshold and keeps it frozen', () => {
+    const s = quiet();
+    giveOrb(s, 200);
+    step(s, DT, still);
+    assert.equal(s.status, 'levelup');
+    assert.ok(s.events.some((e) => e.type === 'levelUp'));
+    const before = { x: s.player.x, time: s.time };
+    placeEnemy(s, 'enemy1', 5, 0);
+    for (let i = 0; i < 120; i++) step(s, DT, { x: 1, y: 0 });
+    assert.equal(s.player.x, before.x);
+    assert.equal(s.time, before.time);
+    assert.equal(s.player.hp, s.player.maxHp);
+  });
+
+  it('does not level up below the threshold', () => {
+    const s = quiet();
+    giveOrb(s, 199);
+    step(s, DT, still);
+    assert.equal(s.status, 'playing');
+  });
+
+  it('keeps leftover XP and resumes after a choice', () => {
+    const s = quiet();
+    giveOrb(s, 230);
+    step(s, DT, still);
+    assert.equal(s.xp, 30);
+    assert.equal(applyUpgrade(s, 'damage'), true);
+    assert.equal(s.status, 'playing');
+  });
+
+  it('asks again when leftover XP pays for another upgrade', () => {
+    const s = quiet();
+    giveOrb(s, 450);
+    step(s, DT, still);
+    assert.equal(s.xp, 250);
+    applyUpgrade(s, 'damage');
+    assert.equal(s.status, 'levelup');
+    assert.equal(s.xp, 50);
+  });
+
+  it('offers all five upgrades', () => {
+    assert.deepEqual(availableUpgrades(quiet()).sort(), ['companion', 'damage', 'health', 'pierce', 'pump']);
+  });
+
+  it('refuses a choice when no menu is open, or one not on offer', () => {
+    const s = quiet();
+    assert.equal(applyUpgrade(s, 'damage'), false);
+    assert.equal(s.gun.bonusDamage, 0);
+    levelUp(s);
+    assert.equal(applyUpgrade(s, 'invincible'), false);
+    assert.equal(s.status, 'levelup');
+  });
+
+  it('adds damage to the shots the player fires', () => {
+    const s = quiet();
+    levelUp(s);
+    applyUpgrade(s, 'damage');
+    step(s, DT, { x: 0, y: 0, aimX: 1, aimY: 0 });
+    assert.equal(s.shots[0].damage, s.cfg.characters.player.damage + 20);
+  });
+
+  it('adds to both maximum and current health', () => {
+    const s = quiet();
+    s.player.hp = 50;
+    levelUp(s);
+    applyUpgrade(s, 'health');
+    assert.equal(s.player.maxHp, s.cfg.characters.player.hp + 20);
+    assert.equal(s.player.hp, 70);
+  });
+
+  it('uses the admin-set upgrade amounts', () => {
+    const s = quiet((c) => { c.gameplay.upgradeDamage = 5; c.gameplay.upgradeHealth = 7; });
+    levelUp(s);
+    applyUpgrade(s, 'damage');
+    levelUp(s);
+    applyUpgrade(s, 'health');
+    assert.equal(s.gun.bonusDamage, 5);
+    assert.equal(s.player.maxHp, s.cfg.characters.player.hp + 7);
+  });
+
+  it('pump fires a short spread, slower, and leaves the menu once owned', () => {
+    const s = quiet();
+    const single = s.cfg.characters.player.fireInterval;
+    levelUp(s);
+    applyUpgrade(s, 'pump');
+    step(s, DT, { x: 0, y: 0, aimX: 1, aimY: 0 });
+    assert.equal(s.shots.length, 5);
+    assert.ok(new Set(s.shots.map((p) => p.vy.toFixed(2))).size === 5);
+    assert.ok(s.shots[0].ttl < 0.95);
+    assert.ok(s.player.cool > single);
+    assert.equal(availableUpgrades(s).includes('pump'), false);
+  });
+
+  it('pump auto-aim waits until a target is within its reach', () => {
+    const s = quiet();
+    levelUp(s);
+    applyUpgrade(s, 'pump');
+    placeEnemy(s, 'enemy2', 420, 0).speed = 0;
+    step(s, DT, still);
+    assert.equal(s.shots.length, 0);
+  });
+
+  it('a companion upgrade adds one now, and the usual one still joins later', () => {
+    const s = quiet((c) => { c.gameplay.companionKills = 3; });
+    levelUp(s);
+    applyUpgrade(s, 'companion');
+    assert.equal(s.companions.length, 1);
+    s.kills = 3;
+    step(s, DT, still);
+    assert.equal(s.companions.length, 2);
+    step(s, DT, still);
+    assert.equal(s.companions.length, 2);
+  });
+
+  it('companions spread out around the player', () => {
+    const s = quiet((c) => { c.gameplay.companionKills = 0; });
+    for (let i = 0; i < 2; i++) { levelUp(s); applyUpgrade(s, 'companion'); }
+    for (let i = 0; i < 60 * 4; i++) step(s, DT, still);
+    assert.equal(s.companions.length, 3);
+    assert.ok(dist(s.companions[0], s.companions[1]) > 80);
+    assert.ok(dist(s.companions[1], s.companions[2]) > 80);
+  });
+
+  it('stops offering companions at the cap', () => {
+    const s = quiet((c) => { c.gameplay.companionKills = 200; c.gameplay.companionDistance = 300; });
+    for (let i = 0; i < 6; i++) { levelUp(s); applyUpgrade(s, 'companion'); }
+    assert.equal(availableUpgrades(s).includes('companion'), false);
+  });
+
+  function lineOfTargets(s, count) {
+    const out = [];
+    for (let i = 0; i < count; i++) {
+      const e = placeEnemy(s, 'enemy2', 80 + i * 60, 0);
+      e.speed = 0;
+      e.hp = e.maxHp = 1e9;
+      out.push(e);
+    }
+    return out;
+  }
+  const fireOne = (s) => {
+    step(s, DT, { x: 0, y: 0, aimX: 1, aimY: 0 });
+    s.player.cool = 1e9;
+    for (let i = 0; i < 60; i++) step(s, DT, still);
+  };
+  const struck = (targets) => targets.filter((e) => e.hp < e.maxHp).length;
+
+  it('a normal bullet stops at the first enemy', () => {
+    const s = quiet();
+    const targets = lineOfTargets(s, 3);
+    fireOne(s);
+    assert.equal(struck(targets), 1);
+  });
+
+  it('each pierce upgrade lets a bullet through one more enemy', () => {
+    const s = quiet();
+    levelUp(s);
+    applyUpgrade(s, 'pierce');
+    const targets = lineOfTargets(s, 3);
+    fireOne(s);
+    assert.equal(struck(targets), 2);
+
+    const t = quiet();
+    for (let i = 0; i < 2; i++) { levelUp(t); applyUpgrade(t, 'pierce'); }
+    const more = lineOfTargets(t, 4);
+    fireOne(t);
+    assert.equal(struck(more), 3);
+  });
+
+  it('a piercing bullet hits each enemy only once', () => {
+    const s = quiet();
+    for (let i = 0; i < 3; i++) { levelUp(s); applyUpgrade(s, 'pierce'); }
+    const [only] = lineOfTargets(s, 1);
+    fireOne(s);
+    assert.equal(only.maxHp - only.hp, s.cfg.characters.player.damage);
+  });
+
+  it('companion bullets do not pierce', () => {
+    const s = quiet((c) => { c.gameplay.companionKills = 0; });
+    levelUp(s);
+    applyUpgrade(s, 'pierce');
+    step(s, DT, still);
+    s.player.cool = 1e9;
+    placeEnemy(s, 'enemy2', s.companions[0].x + 100, s.companions[0].y).speed = 0;
+    for (let i = 0; i < 40 && !s.shots.length; i++) step(s, DT, still);
+    assert.equal(s.shots[0].ally, true);
+    assert.equal(s.shots[0].pierce, 0);
+  });
+});
+
 describe('losing', () => {
   it('ends the game at zero health', () => {
     const s = game();
@@ -458,7 +707,9 @@ describe('full playthrough', () => {
     for (let seed = 1; seed <= 12; seed++) {
       const s = game(seed * 31);
       let frames = 0;
-      while (s.status === 'playing' && frames < 60 * 240) {
+      const picks = ['damage', 'companion', 'health', 'pierce'];
+      while ((s.status === 'playing' || s.status === 'levelup') && frames < 60 * 240) {
+        if (s.status === 'levelup') applyUpgrade(s, picks[s.kills % picks.length]);
         step(s, DT, bot(s));
         frames += 1;
         s.events.length = 0;
