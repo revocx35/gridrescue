@@ -1,0 +1,28 @@
+services:
+  app:
+    build: .
+    image: gridrescue:local
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATA_DIR: /data
+      PORT: "8443"
+      TLS_CERT_FILE: /certs/tls.crt
+      TLS_KEY_FILE: /certs/tls.key
+    ports:
+      - "${HTTPS_PORT:-8443}:8443"
+    volumes:
+      - data:/data
+      - ./certs:/certs:ro
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 256m
+    pids_limit: 128
+
+volumes:
+  data:

@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Admin</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/css/admin.css">
+  <script type="module" src="/js/admin.js"></script>
+</head>
+<body>
+  <section class="signin" id="signin" hidden>
+    <div class="panel signin-card">
+      <img class="brand-logo" src="/favicon.svg" alt="" width="52" height="52">
+      <h1 id="signin-title"></h1>
+      <p class="notice" id="signin-error" role="alert" hidden></p>
+      <a class="btn btn-primary" href="/auth/login">Sign in with Authentik</a>
+      <a class="micro back-link" href="/">Back to the game</a>
+    </div>
+  </section>
+
+  <div class="app" id="app" hidden>
+    <header class="topbar">
+      <img class="brand-logo" src="/favicon.svg" alt="" width="34" height="34">
+      <div class="topbar-title">
+        <span class="micro">Game editor</span>
+        <strong id="brand-title"></strong>
+      </div>
+      <span class="spacer"></span>
+      <span class="micro" id="user-name"></span>
+      <a class="btn" href="/" target="_blank" rel="noopener">View game</a>
+      <button class="btn" type="button" id="logout">Sign out</button>
+    </header>
+
+    <nav class="tabs" role="tablist">
+      <button class="tab" role="tab" type="button" data-tab="characters">Characters</button>
+      <button class="tab" role="tab" type="button" data-tab="site">Site menu</button>
+      <button class="tab" role="tab" type="button" data-tab="gameplay">Gameplay</button>
+    </nav>
+
+    <main class="content">
+      <section id="tab-characters" class="tab-page"></section>
+      <section id="tab-site" class="tab-page"></section>
+      <section id="tab-gameplay" class="tab-page"></section>
+    </main>
+
+    <footer class="savebar">
+      <div class="status" id="status" role="status" aria-live="polite"></div>
+      <button class="btn" type="button" id="reset">Restore defaults</button>
+      <button class="btn btn-primary" type="button" id="save" disabled>Save changes</button>
+    </footer>
+  </div>
+</body>
+</html>

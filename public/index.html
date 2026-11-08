@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#07090d">
+  <title>Loading</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/css/game.css">
+  <script type="module" src="/js/main.js"></script>
+</head>
+<body>
+  <main class="page" id="page">
+    <header class="section-title" id="section-title">
+      <h1 id="site-title"></h1>
+      <p id="site-tagline" hidden></p>
+    </header>
+
+    <section class="stage" id="section-game" aria-label="Game">
+      <canvas id="game"></canvas>
+
+      <div class="hud" id="hud" hidden>
+        <div class="hud-row">
+          <div class="vitals">
+            <div class="vital">
+              <span class="vital-name" id="player-name"></span>
+              <span class="bar"><span class="bar-fill" id="player-bar"></span></span>
+            </div>
+            <div class="vital" id="companion-vital" hidden>
+              <span class="vital-name" id="companion-name"></span>
+              <span class="bar"><span class="bar-fill bar-ally" id="companion-bar"></span></span>
+            </div>
+          </div>
+          <div class="stats">
+            <span class="stat"><span class="micro">Kills</span> <b id="stat-kills">0</b></span>
+            <span class="stat"><span class="micro">Time</span> <b id="stat-time">0:00</b></span>
+            <button type="button" class="icon-btn" id="pause-btn" aria-label="Pause">
+              <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2h3v12H4zM9 2h3v12H9z"/></svg>
+            </button>
+          </div>
+        </div>
+        <div class="boss-vital" id="boss-vital" hidden>
+          <span class="boss-name" id="boss-name"></span>
+          <span class="bar bar-wide"><span class="bar-fill bar-boss" id="boss-bar"></span></span>
+        </div>
+      </div>
+
+      <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+      <div class="overlay" id="overlay">
+        <div class="card">
+          <h2 id="overlay-heading"></h2>
+          <p class="overlay-text" id="overlay-text"></p>
+          <div class="roster" id="roster"></div>
+          <button type="button" class="primary" id="overlay-action"></button>
+          <p class="micro controls-hint" id="controls-hint"></p>
+        </div>
+        <a class="admin-link micro" href="/admin">Admin</a>
+      </div>
+    </section>
+
+    <section class="joy-panel" id="section-joystick" aria-label="Movement joystick">
+      <div class="joy" id="joystick"><div class="joy-knob" id="joy-knob"></div></div>
+    </section>
+  </main>
+</body>
+</html>

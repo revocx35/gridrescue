@@ -1,0 +1,24 @@
+{
+  "name": "gridrescue",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Endless-grid 2D rescue game whose names, sprites and page layout are editable by an admin.",
+  "type": "module",
+  "engines": {
+    "node": ">=22.2"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --test \"test/*.test.js\""
+  },
+  "dependencies": {
+    "@fastify/cookie": "^11.1.5",
+    "@fastify/rate-limit": "^11.2.2",
+    "@fastify/static": "^10.1.10",
+    "fastify": "^5.12.8",
+    "openid-client": "^6.8.9"
+  },
+  "devDependencies": {
+    "jose": "^6.2.16"
+  }
+}

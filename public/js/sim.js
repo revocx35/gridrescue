@@ -1,0 +1,447 @@
+// Game rules, with no DOM access: the browser renders this state and tests run it headlessly.
+
+const TAU = Math.PI * 2;
+const DEG = Math.PI / 180;
+const SHOT_SPEED = 680;
+const BOSS_BULLET_SPEED = 300;
+const DESPAWN_DISTANCE = 2600;
+const PLAYER_GRACE = 0.28;
+const LEASH_FACTOR = 2.3;
+export const CELL_SIZE = 80;
+
+const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+const radius = (size) => size * 0.42;
+
+function actor(x, y, ch) {
+  return {
+    x, y, vx: 0, vy: 0,
+    hp: ch.hp, maxHp: ch.hp,
+    r: radius(ch.size),
+    cool: 0, flash: 0, face: 1,
+  };
+}
+
+/** view is the half-size of the visible world, kept current by the renderer. */
+export function createGame(cfg, { rng = Math.random, view = { halfW: 500, halfH: 350 } } = {}) {
+  const c = cfg.characters;
+  const angle = rng() * TAU;
+  const distance = cfg.gameplay.hostageDistance * (0.85 + rng() * 0.3);
+  const hostage = { x: Math.cos(angle) * distance, y: Math.sin(angle) * distance, r: radius(c.hostage.size) };
+  const arena = cfg.gameplay.arenaRadius;
+  const boss = {
+    ...actor(hostage.x, hostage.y - arena * 0.4, c.boss),
+    kind: 'boss', mode: 'idle', alive: true,
+    fanT: 1.2, ringT: 3.4, chargeT: 5, windup: 0, dash: 0, dashX: 0, dashY: 0,
+  };
+  return {
+    cfg, rng, view,
+    status: 'playing',
+    time: 0, kills: 0, spawnT: 1.4, grace: 0,
+    player: actor(0, 0, c.player),
+    companion: null,
+    hostage, boss,
+    enemies: [], shots: [], bullets: [],
+    hint: null,
+    events: [],
+  };
+}
+
+function emit(s, type, data = {}) {
+  s.events.push({ type, ...data });
+}
+
+function nearestEnemy(s, from, range) {
+  let best = null;
+  let bestD = range;
+  for (const e of s.enemies) {
+    const d = dist(from, e);
+    if (d < bestD) { best = e; bestD = d; }
+  }
+  if (s.boss.alive) {
+    const d = dist(from, s.boss) - s.boss.r * 0.6;
+    if (d < bestD) best = s.boss;
+  }
+  return best;
+}
+
+function fireAt(s, shooter, ch, dt) {
+  shooter.cool -= dt;
+  if (shooter.cool > 0) return;
+  const target = nearestEnemy(s, shooter, s.cfg.gameplay.attackRange);
+  if (!target) return;
+  shooter.cool = ch.fireInterval;
+  const lead = dist(shooter, target) / SHOT_SPEED;
+  const dx = target.x + target.vx * lead - shooter.x;
+  const dy = target.y + target.vy * lead - shooter.y;
+  const d = Math.hypot(dx, dy) || 1;
+  s.shots.push({
+    x: shooter.x, y: shooter.y,
+    vx: (dx / d) * SHOT_SPEED, vy: (dy / d) * SHOT_SPEED,
+    ttl: 0.95, damage: ch.damage, ally: shooter !== s.player,
+  });
+}
+
+/** A lit wedge that contains the hostage's real direction without being centred on it. */
+function lightHint(s) {
+  const { hintSpread, hintSeconds } = s.cfg.gameplay;
+  const truth = Math.atan2(s.hostage.y - s.player.y, s.hostage.x - s.player.x);
+  const spread = hintSpread * DEG;
+  const offset = (s.rng() - 0.5) * spread * 0.8;
+  s.hint = { angle: truth + offset, spread, ttl: hintSeconds, total: hintSeconds };
+  emit(s, 'hint');
+}
+
+function killEnemy(s, e) {
+  s.kills += 1;
+  const heal = e.kind === 'enemy1' ? 12 : 3;
+  s.player.hp = Math.min(s.player.maxHp, s.player.hp + heal);
+  emit(s, 'kill', { x: e.x, y: e.y, kind: e.kind });
+  lightHint(s);
+}
+
+function hurtEnemy(s, e, damage) {
+  e.hp -= damage;
+  e.flash = 0.09;
+  if (e.kind === 'boss' && e.mode !== 'fight') wakeBoss(s);
+  if (e.hp > 0) return false;
+  if (e.kind === 'boss') {
+    e.alive = false;
+    s.bullets.length = 0;
+    s.enemies.length = 0;
+    emit(s, 'bossDead', { x: e.x, y: e.y });
+  } else {
+    killEnemy(s, e);
+  }
+  return true;
+}
+
+function hurtPlayer(s, damage) {
+  if (s.grace > 0 || s.status !== 'playing') return;
+  s.player.hp -= damage;
+  s.player.flash = 0.14;
+  s.grace = PLAYER_GRACE;
+  emit(s, 'hurt');
+  if (s.player.hp <= 0) {
+    s.player.hp = 0;
+    s.status = 'lost';
+    emit(s, 'lose');
+  }
+}
+
+function hurtCompanion(s, damage) {
+  const m = s.companion;
+  m.hp -= damage;
+  m.flash = 0.14;
+  if (m.hp <= 0) {
+    m.hp = 0;
+    m.down = 9;
+    emit(s, 'companionDown', { x: m.x, y: m.y });
+  }
+}
+
+function wakeBoss(s) {
+  if (s.boss.mode === 'fight') return;
+  s.boss.mode = 'fight';
+  emit(s, 'bossWake');
+}
+
+function spawnEnemy(s) {
+  const { cfg, player, hostage, view, rng } = s;
+  const g = cfg.gameplay;
+  const angle = rng() * TAU;
+  const ring = Math.hypot(view.halfW, view.halfH) + 90;
+  const x = player.x + Math.cos(angle) * ring;
+  const y = player.y + Math.sin(angle) * ring;
+  if (Math.hypot(x - hostage.x, y - hostage.y) < g.arenaRadius + 60) return;
+  const kind = rng() < g.enemy1Chance ? 'enemy1' : 'enemy2';
+  const ch = cfg.characters[kind];
+  const e = actor(x, y, ch);
+  e.kind = kind;
+  e.speed = ch.speed * (0.92 + rng() * 0.16);
+  e.damage = ch.damage;
+  s.enemies.push(e);
+}
+
+function updateSpawning(s, dt) {
+  if (!s.boss.alive) return;
+  s.spawnT -= dt;
+  if (s.spawnT > 0) return;
+  const base = s.cfg.gameplay.spawnInterval;
+  const interval = Math.max(base * 0.42, base * (1 - s.time / 260));
+  s.spawnT = interval * (s.boss.mode === 'fight' ? 2.2 : 1);
+  if (s.enemies.length < s.cfg.gameplay.maxEnemies) spawnEnemy(s);
+}
+
+function maybeSpawnCompanion(s) {
+  if (s.companion) return;
+  const g = s.cfg.gameplay;
+  if (s.kills < g.companionKills && dist(s.player, s.hostage) > g.companionDistance) return;
+  s.companion = { ...actor(s.player.x - 60, s.player.y + 40, s.cfg.characters.companion), down: 0 };
+  emit(s, 'companion', { x: s.companion.x, y: s.companion.y });
+}
+
+function updateCompanion(s, dt) {
+  const m = s.companion;
+  if (!m) return;
+  const ch = s.cfg.characters.companion;
+  if (m.down > 0) {
+    m.down -= dt;
+    if (m.down <= 0) {
+      m.down = 0;
+      m.hp = m.maxHp;
+      m.x = s.player.x - 50;
+      m.y = s.player.y + 40;
+      emit(s, 'companion', { x: m.x, y: m.y, revived: true });
+    }
+    return;
+  }
+  m.flash = Math.max(0, m.flash - dt);
+  const away = dist(m, s.player);
+  const follow = away > 90 ? Math.min(1, (away - 90) / 80) : 0;
+  const dx = (s.player.x - m.x) / (away || 1);
+  const dy = (s.player.y - m.y) / (away || 1);
+  m.vx = dx * ch.speed * follow;
+  m.vy = dy * ch.speed * follow;
+  m.x += m.vx * dt;
+  m.y += m.vy * dt;
+  if (Math.abs(m.vx) > 5) m.face = Math.sign(m.vx);
+  fireAt(s, m, ch, dt);
+}
+
+function chaseTarget(s, e) {
+  const m = s.companion;
+  if (m && !m.down && dist(e, m) * 1.25 < dist(e, s.player)) return m;
+  return s.player;
+}
+
+function updateEnemies(s, dt) {
+  for (let i = s.enemies.length - 1; i >= 0; i--) {
+    const e = s.enemies[i];
+    if (dist(e, s.player) > DESPAWN_DISTANCE) {
+      s.enemies.splice(i, 1);
+      continue;
+    }
+    const target = chaseTarget(s, e);
+    const d = dist(e, target) || 1;
+    let vx = ((target.x - e.x) / d) * e.speed;
+    let vy = ((target.y - e.y) / d) * e.speed;
+    for (const other of s.enemies) {
+      if (other === e) continue;
+      const ox = e.x - other.x;
+      const oy = e.y - other.y;
+      const od = Math.hypot(ox, oy);
+      const min = e.r + other.r;
+      if (od > 0 && od < min) {
+        vx += (ox / od) * 110;
+        vy += (oy / od) * 110;
+      }
+    }
+    e.vx = vx;
+    e.vy = vy;
+    e.x += vx * dt;
+    e.y += vy * dt;
+    if (Math.abs(vx) > 5) e.face = Math.sign(vx);
+    e.flash = Math.max(0, e.flash - dt);
+    e.cool -= dt;
+    if (e.cool <= 0 && d < e.r + target.r) {
+      e.cool = 0.75;
+      if (target === s.player) hurtPlayer(s, e.damage);
+      else hurtCompanion(s, e.damage);
+    }
+  }
+}
+
+function fireBossBullet(s, angle, speed = BOSS_BULLET_SPEED) {
+  const b = s.boss;
+  s.bullets.push({
+    x: b.x, y: b.y,
+    vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed,
+    ttl: 3.2, r: 9, damage: s.cfg.characters.boss.damage,
+  });
+}
+
+function updateBoss(s, dt) {
+  const b = s.boss;
+  if (!b.alive) return;
+  b.flash = Math.max(0, b.flash - dt);
+  const ch = s.cfg.characters.boss;
+  const arena = s.cfg.gameplay.arenaRadius;
+  const fromHome = dist(s.player, s.hostage);
+  const home = { x: s.hostage.x, y: s.hostage.y - arena * 0.4 };
+
+  if (b.mode === 'idle') {
+    if (fromHome < arena) wakeBoss(s);
+    return;
+  }
+  if (b.mode === 'fight' && fromHome > arena * LEASH_FACTOR) {
+    b.mode = 'return';
+    b.dash = 0;
+    b.windup = 0;
+    emit(s, 'bossRetreat');
+  }
+  if (b.mode === 'return') {
+    const d = dist(b, home);
+    if (d < 8) {
+      b.mode = 'idle';
+      b.hp = b.maxHp;
+    } else {
+      b.vx = ((home.x - b.x) / d) * ch.speed * 1.6;
+      b.vy = ((home.y - b.y) / d) * ch.speed * 1.6;
+      b.x += b.vx * dt;
+      b.y += b.vy * dt;
+    }
+    b.hp = Math.min(b.maxHp, b.hp + b.maxHp * 0.12 * dt);
+    if (fromHome < arena) wakeBoss(s);
+    return;
+  }
+
+  const enraged = b.hp < b.maxHp * 0.5;
+  const pace = enraged ? 1.45 : 1;
+  const d = dist(b, s.player) || 1;
+  const toPlayer = Math.atan2(s.player.y - b.y, s.player.x - b.x);
+
+  if (b.windup > 0) {
+    b.windup -= dt;
+    b.vx = 0;
+    b.vy = 0;
+    if (b.windup <= 0) {
+      b.dash = 0.55;
+      b.dashX = Math.cos(toPlayer);
+      b.dashY = Math.sin(toPlayer);
+    }
+  } else if (b.dash > 0) {
+    b.dash -= dt;
+    b.vx = b.dashX * ch.speed * 4.6;
+    b.vy = b.dashY * ch.speed * 4.6;
+  } else {
+    b.vx = ((s.player.x - b.x) / d) * ch.speed;
+    b.vy = ((s.player.y - b.y) / d) * ch.speed;
+    b.fanT -= dt * pace;
+    b.ringT -= dt * pace;
+    b.chargeT -= dt * pace;
+    if (b.fanT <= 0) {
+      b.fanT = 1.5;
+      const count = enraged ? 7 : 5;
+      for (let i = 0; i < count; i++) fireBossBullet(s, toPlayer + (i - (count - 1) / 2) * 0.2);
+    }
+    if (b.ringT <= 0) {
+      b.ringT = 4.2;
+      const start = s.rng() * TAU;
+      for (let i = 0; i < 16; i++) fireBossBullet(s, start + (i / 16) * TAU, BOSS_BULLET_SPEED * 0.8);
+    }
+    if (b.chargeT <= 0) {
+      b.chargeT = 5.5;
+      b.windup = 0.7;
+      emit(s, 'bossCharge');
+    }
+  }
+
+  b.x += b.vx * dt;
+  b.y += b.vy * dt;
+  // The boss guards the hostage: it never leaves the arena.
+  const fromCentre = dist(b, s.hostage);
+  if (fromCentre > arena) {
+    b.x = s.hostage.x + ((b.x - s.hostage.x) / fromCentre) * arena;
+    b.y = s.hostage.y + ((b.y - s.hostage.y) / fromCentre) * arena;
+    b.dash = 0;
+  }
+  if (Math.abs(b.vx) > 5) b.face = Math.sign(b.vx);
+
+  b.cool -= dt;
+  if (b.cool <= 0 && d < b.r + s.player.r) {
+    b.cool = 0.75;
+    hurtPlayer(s, ch.damage * 1.6);
+  }
+  const m = s.companion;
+  if (m && !m.down && b.cool <= 0 && dist(b, m) < b.r + m.r) {
+    b.cool = 0.75;
+    hurtCompanion(s, ch.damage * 1.6);
+  }
+}
+
+function updateShots(s, dt) {
+  for (let i = s.shots.length - 1; i >= 0; i--) {
+    const p = s.shots[i];
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+    p.ttl -= dt;
+    let hit = false;
+    for (let j = s.enemies.length - 1; j >= 0 && !hit; j--) {
+      const e = s.enemies[j];
+      if (dist(p, e) < e.r + 6) {
+        hit = true;
+        if (hurtEnemy(s, e, p.damage)) s.enemies.splice(j, 1);
+      }
+    }
+    if (!hit && s.boss.alive && dist(p, s.boss) < s.boss.r + 6) {
+      hit = true;
+      hurtEnemy(s, s.boss, p.damage);
+    }
+    if (hit || p.ttl <= 0) s.shots.splice(i, 1);
+  }
+}
+
+function updateBullets(s, dt) {
+  for (let i = s.bullets.length - 1; i >= 0; i--) {
+    const b = s.bullets[i];
+    b.x += b.vx * dt;
+    b.y += b.vy * dt;
+    b.ttl -= dt;
+    let hit = false;
+    if (dist(b, s.player) < b.r + s.player.r) {
+      hurtPlayer(s, b.damage);
+      hit = true;
+    } else if (s.companion && !s.companion.down && dist(b, s.companion) < b.r + s.companion.r) {
+      hurtCompanion(s, b.damage * 0.6);
+      hit = true;
+    }
+    if (hit || b.ttl <= 0) s.bullets.splice(i, 1);
+  }
+}
+
+function updateRescue(s) {
+  if (dist(s.player, s.hostage) >= s.player.r + s.hostage.r + 24) {
+    s.lockedNoticeShown = false;
+    return;
+  }
+  if (s.boss.alive) {
+    if (!s.lockedNoticeShown) emit(s, 'hostageLocked');
+    s.lockedNoticeShown = true;
+    return;
+  }
+  s.status = 'won';
+  emit(s, 'win');
+}
+
+/** Advances the game by dt seconds. input is { x, y } with magnitude at most 1. */
+export function step(s, dt, input) {
+  if (s.status !== 'playing') return;
+  s.time += dt;
+  s.grace = Math.max(0, s.grace - dt);
+
+  const ch = s.cfg.characters.player;
+  const p = s.player;
+  const mag = Math.hypot(input.x, input.y);
+  const scale = mag > 1 ? 1 / mag : 1;
+  p.vx = input.x * scale * ch.speed;
+  p.vy = input.y * scale * ch.speed;
+  p.x += p.vx * dt;
+  p.y += p.vy * dt;
+  if (Math.abs(p.vx) > 5) p.face = Math.sign(p.vx);
+  p.flash = Math.max(0, p.flash - dt);
+
+  if (s.hint) {
+    s.hint.ttl -= dt;
+    if (s.hint.ttl <= 0) s.hint = null;
+  }
+
+  maybeSpawnCompanion(s);
+  updateSpawning(s, dt);
+  fireAt(s, p, ch, dt);
+  updateCompanion(s, dt);
+  updateEnemies(s, dt);
+  updateBoss(s, dt);
+  updateShots(s, dt);
+  updateBullets(s, dt);
+  if (s.status === 'playing') updateRescue(s);
+}
