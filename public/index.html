@@ -72,7 +72,11 @@
           </form>
           <div class="board" id="board" hidden></div>
           <button type="button" class="primary" id="overlay-action"></button>
-          <button type="button" class="text-btn" id="board-toggle" hidden>Leaderboard</button>
+          <div class="text-btn-row">
+            <button type="button" class="text-btn" id="board-toggle" hidden>Leaderboard</button>
+            <button type="button" class="text-btn" id="notes-toggle" aria-expanded="false" aria-controls="notes" hidden>Patch notes</button>
+          </div>
+          <div class="notes" id="notes" tabindex="0" aria-label="Patch notes" hidden></div>
           <p class="micro controls-hint" id="controls-hint"></p>
         </div>
         <a class="admin-link micro" href="/admin">Admin</a>

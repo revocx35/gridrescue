@@ -313,6 +313,29 @@ body[data-layout="mobile"] .stat { order: 1; }
   cursor: pointer;
 }
 
+.text-btn-row { display: flex; flex-wrap: wrap; justify-content: center; gap: 0 10px; }
+.text-btn-row .text-btn { margin-left: 0; margin-right: 0; }
+
+/* The list has its own scroll, so a long history cannot push the start button off the card. */
+.notes {
+  max-height: min(280px, 45dvh);
+  margin-top: 8px;
+  padding: 10px 12px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  text-align: left;
+  -webkit-user-select: text;
+  user-select: text;
+}
+.notes-entry + .notes-entry { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+.notes-entry h3 { display: inline; margin: 0 8px 0 0; font-size: 15px; }
+.notes-entry ul { margin: 6px 0 0; padding-left: 18px; color: var(--muted); font-size: 14px; line-height: 1.4; overflow-wrap: anywhere; }
+.notes:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
+.overlay:has(.notes:not([hidden])) .admin-link { display: none; } /* it floats over the open list on a phone */
+
 .upgrades { display: grid; gap: 8px; margin-bottom: 14px; }
 
 .upgrade {

@@ -80,6 +80,10 @@ their run. A crash still loses them. Every rejected score logs why, without the 
 
 Endless runs rank separately, by most kills and longest run, and share the map's file. A run's mode comes from its token, like the map, and an Endless run cannot be a win. Rocketeers come on top of the spawn pacing, so on the wasteland the kill-rate limit also allows for the most buses a player could pass.
 
+## Patch notes
+
+The start and end screens have a Patch notes button that opens a scrolling list of every version and what changed. The notes are a static list in `public/js/patch-notes.js`, part of the page rather than the admin's config, and reach the page through `textContent` only.
+
 ## Sound
 
 There are no built-in sounds. Each map's characters have upload slots (`SOUND_SLOTS`), and an empty slot is silent. The simulation emits `shot` and `kamikaze` events naming the role. `sound.js` turns these into one-shots that fade with distance, and each frame loops the idle sound of every role with an actor nearby and the boss theme while a boss is on screen. The theme keeps playing through the upgrade shop; idle sounds stop there, and pausing or the end of a run stops everything. Audio needs a user gesture, so the context starts on the first press.

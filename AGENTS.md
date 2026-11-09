@@ -16,6 +16,7 @@ public/js/scenery.js               Map obstacles (forest trees and tanks, wastel
 public/js/sound.js                 Plays uploaded sounds through Web Audio; loops idle sounds and the boss theme
 public/js/audio-convert.js         Prepares a sound for upload: keeps MP3, converts anything else to WAV in the browser
 public/js/render.js                Canvas drawing and the built-in default art for each map
+public/js/patch-notes.js           What changed in each version, shown to players from the start and end screens
 public/js/leaderboard.js           Leaderboard API calls and tables, used by the game and the admin tab
 public/js/joystick.js              Pointer Events joystick (one instance each for moving and aiming)
 public/js/schema.js                Editable config: defaults, limits, validation. Shared by server and admin UI
@@ -38,7 +39,7 @@ compose.yaml, Dockerfile           Hardened deployment
 
 ```sh
 npm ci                        # install
-npm test                      # all tests (440): rules, modes, editor, PNG, audio, auth, real OIDC client against a local issuer
+npm test                      # all tests (443): rules, modes, editor, PNG, audio, auth, real OIDC client against a local issuer
 npm start                     # plain HTTP unless TLS_* is set; needs PUBLIC_URL for sign-in
 scripts/setup.sh IP:x.x.x.x   # once per checkout
 docker compose up -d --build  # deploy
@@ -56,6 +57,7 @@ docker compose up -d --build  # deploy
 - Keep the UI language in plain words; the visual language is near-black, radial washes, a brand gradient, 14 px
   translucent panels and uppercase micro-labels.
 - Upgrades live in the run state, never in `s.cfg`. Tests and live code both read base stats from `s.cfg` at fire time.
+- A new button on the overlay needs adding to the `closest` guard in `Game.onKey`, or Enter and Space on it also start a run.
 - Only `Game.onShopKey` may handle keys while the shop is open: Enter must never reach the restart path. B opens it only in `playing`, so it cannot fire while typing a leaderboard name.
 - Shop items are declared in `SHOP_SECTIONS` in `sim.js`, take effect in `applyUpgrade`, and get their words from `shopLabel` in `main.js`. Add new ones in all three. Their amounts are `GAMEPLAY_FIELDS`, so the admin can edit them.
 - A game runs on `mapConfig(config, mapId)`: shared `site` and `gameplay` plus one map's `characters`. Never read
@@ -72,6 +74,8 @@ docker compose up -d --build  # deploy
 - Use `mapRoles(mapId)`, not `ROLES`, when walking one map's characters: `rocketeer` and `rocket` exist on the wasteland only.
 - A sound slot is declared in `SOUND_SLOTS` only. There are no built-in sounds and there must never be: an empty slot is silent.
 - Rules emit `shot` and `kamikaze` events with a `role`. Audio lives in `sound.js` and reacts to those; `sim.js` knows nothing about sound.
+
+- Every release adds a player-facing entry at the top of `public/js/patch-notes.js`, in plain words. The patch notes test fails if the newest entry is not the version in `package.json`.
 
 ## Never do
 

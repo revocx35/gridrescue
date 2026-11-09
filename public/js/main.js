@@ -1,6 +1,7 @@
 // Page bootstrap: applies the admin-set layout, wires input and runs the game loop.
 import { Joystick } from './joystick.js';
 import { fetchBoard, postScore, renderBoard, startRun } from './leaderboard.js';
+import { PATCH_NOTES } from './patch-notes.js';
 import { Renderer, drawSpriteInBox, loadSprites } from './render.js';
 import { GAME_MODES, MAPS, MAX_SCORE_NAME_LENGTH, NAMED_ROLES, mapConfig } from './schema.js';
 import { SoundBoard } from './sound.js';
@@ -156,6 +157,25 @@ class MouseAim {
   }
 }
 
+function patchNotesEntry({ version, date, changes }) {
+  const entry = document.createElement('article');
+  entry.className = 'notes-entry';
+  const heading = document.createElement('h3');
+  heading.textContent = `Version ${version}`;
+  const when = document.createElement('time');
+  when.className = 'micro';
+  when.dateTime = date;
+  when.textContent = date;
+  const list = document.createElement('ul');
+  for (const change of changes) {
+    const item = document.createElement('li');
+    item.textContent = change;
+    list.append(item);
+  }
+  entry.append(heading, when, list);
+  return entry;
+}
+
 class Game {
   constructor(fullConfig, mapId, sprites, loadMapSprites) {
     this.fullConfig = fullConfig;
@@ -188,6 +208,7 @@ class Game {
     $('score-form').addEventListener('submit', (e) => this.onScoreSubmit(e));
     $('score-name').maxLength = MAX_SCORE_NAME_LENGTH;
     $('board-toggle').addEventListener('click', () => this.toggleBoard());
+    $('notes-toggle').addEventListener('click', () => this.toggleNotes());
     addEventListener('keydown', (e) => this.onKey(e));
     document.addEventListener('visibilitychange', () => {
       if (document.hidden) this.pause();
@@ -277,7 +298,7 @@ class Game {
       if (this.mode === 'playing') this.pause();
       else if (this.mode === 'paused') this.resume();
     } else if ((e.code === 'Enter' || e.code === 'Space') && this.mode !== 'playing') {
-      if (e.target.closest?.('.map-choice, #score-form, #board-toggle')) return; // that key belongs to the control
+      if (e.target.closest?.('.map-choice, #score-form, #board-toggle, #notes-toggle, #notes')) return; // that key belongs to the control
       e.preventDefault();
       this.onOverlayAction();
     }
@@ -311,6 +332,8 @@ class Game {
     $('board').hidden = true;
     $('board-toggle').hidden = !boardButton;
     $('board-toggle').textContent = 'Leaderboard';
+    $('notes-toggle').hidden = !boardButton;
+    this.setNotesOpen(false);
     if (picker) this.buildPickers();
     $('controls-hint').textContent = hint;
     $('controls-hint').hidden = !hint;
@@ -569,6 +592,18 @@ class Game {
     $('board-toggle').textContent = opening ? 'Hide leaderboard' : 'Leaderboard';
     if (opening) this.showBoard();
     else $('board').hidden = true;
+  }
+
+  setNotesOpen(open) {
+    if (open && !$('notes').hasChildNodes()) $('notes').replaceChildren(...PATCH_NOTES.map(patchNotesEntry));
+    $('notes').hidden = !open;
+    $('notes-toggle').textContent = open ? 'Hide patch notes' : 'Patch notes';
+    $('notes-toggle').setAttribute('aria-expanded', String(open));
+  }
+
+  toggleNotes() {
+    this.setNotesOpen($('notes').hidden);
+    if (!$('notes').hidden) $('notes').scrollIntoView({ block: 'nearest' }); // on a phone it opens below the fold
   }
 
   toast(message, seconds = 2.4) {
