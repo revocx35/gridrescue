@@ -27,7 +27,7 @@
               <span class="bar"><span class="bar-fill" id="player-bar"></span></span>
             </div>
             <div class="vital">
-              <span class="micro xp-label">XP <b id="xp-text">0</b> · Level <b id="stat-level">1</b></span>
+              <span class="micro xp-label">XP <b id="xp-text">0</b> · Level <b id="stat-level">1</b><span id="points-label" hidden> · <b id="stat-points">0</b> ready, press B</span></span>
               <span class="bar bar-thin"><span class="bar-fill bar-xp" id="xp-bar"></span></span>
             </div>
             <div class="vital" id="companion-vital" hidden>
@@ -38,6 +38,7 @@
           <div class="stats">
             <span class="stat"><span class="micro">Kills</span> <b id="stat-kills">0</b></span>
             <span class="stat"><span class="micro">Time</span> <b id="stat-time">0:00</b></span>
+            <button type="button" class="shop-btn" id="shop-btn">Shop<span class="shop-count" id="shop-count" hidden></span></button>
             <button type="button" class="icon-btn" id="pause-btn" aria-label="Pause">
               <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2h3v12H4zM9 2h3v12H9z"/></svg>
             </button>
@@ -58,6 +59,7 @@
           <div class="map-picker" id="map-picker" role="group" aria-label="Map" hidden></div>
           <div class="map-picker" id="mode-picker" role="group" aria-label="Game mode" hidden></div>
           <div class="roster" id="roster"></div>
+          <div class="map-picker" id="shop-tabs" role="group" aria-label="Shop sections" hidden></div>
           <div class="upgrades" id="upgrades" hidden></div>
           <form class="score-form" id="score-form" hidden novalidate>
             <label class="micro" id="score-label" for="score-name"></label>

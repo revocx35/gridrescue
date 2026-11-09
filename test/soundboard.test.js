@@ -50,23 +50,23 @@ describe('looping sounds', () => {
     assert.equal(sources.length, 2);
   });
 
-  it('keeps the same theme playing through the upgrade menu', () => {
+  it('keeps the same theme playing through the upgrade shop', () => {
     const theme = board.loops.get('boss:theme').source;
-    board.update(state, renderer, 'levelup');
+    board.update(state, renderer, 'shop');
     assert.equal(board.loops.get('boss:theme').source, theme);
     assert.equal(theme.stopped, undefined);
   });
 
   it('does not restart the theme when the game resumes', () => {
     const theme = board.loops.get('boss:theme').source;
-    board.update(state, renderer, 'levelup');
+    board.update(state, renderer, 'shop');
     board.update(state, renderer, 'playing');
     assert.equal(board.loops.get('boss:theme').source, theme);
     assert.equal(sources.length, 3, 'only the idle sound starts again');
   });
 
-  it('stops idle sounds during the upgrade menu', () => {
-    board.update(state, renderer, 'levelup');
+  it('stops idle sounds during the upgrade shop', () => {
+    board.update(state, renderer, 'shop');
     assert.equal(board.loops.has('enemy1:idle'), false);
   });
 

@@ -92,7 +92,7 @@ export class SoundBoard {
       wanted.set(key, Math.max(wanted.get(key) ?? 0, 1 - d / NEAR));
     };
     for (const e of state.enemies) hear(e.kind, e);
-    for (const m of state.companions) if (!m.down) hear('companion', m);
+    for (const m of state.companions) if (!m.down) hear(m.role, m);
     if (state.hostage) hear('hostage', state.hostage);
     const bossSeen = (state.boss.alive && renderer.inView(state.boss, BOSS_VIEW_MARGIN))
       || state.enemies.some((e) => e.kind === 'boss' && renderer.inView(e, BOSS_VIEW_MARGIN));
@@ -100,15 +100,15 @@ export class SoundBoard {
     return wanted;
   }
 
-  /** Call once per frame with the game's mode. Choosing an upgrade keeps the theme going; any other stop silences every loop. */
+  /** Call once per frame with the game's mode. The upgrade shop keeps the theme going; any other stop silences every loop. */
   update(state, renderer, mode) {
     if (!this.context) return;
-    if (mode !== 'playing' && mode !== 'levelup') {
+    if (mode !== 'playing' && mode !== 'shop') {
       this.#stopLoops();
       return;
     }
     const wanted = this.#wantedLoops(state, renderer);
-    if (mode === 'levelup') for (const key of wanted.keys()) if (key !== THEME_KEY) wanted.delete(key);
+    if (mode === 'shop') for (const key of wanted.keys()) if (key !== THEME_KEY) wanted.delete(key);
     for (const key of this.loops.keys()) if (!wanted.has(key)) this.#stopLoop(key);
     for (const [key, volume] of wanted) this.#setLoop(key, volume);
   }

@@ -6,7 +6,7 @@ export const MAPS = ['grid', 'forest', 'wasteland'];
 
 export const GAME_MODES = ['rescue', 'endless'];
 
-export const ROLES = ['player', 'companion', 'hostage', 'enemy1', 'enemy2', 'boss', 'enemy5', 'ball', 'jet', 'missile', 'rocketeer', 'rocket'];
+export const ROLES = ['player', 'companion', 'companion2', 'hostage', 'enemy1', 'enemy2', 'boss', 'enemy5', 'ball', 'jet', 'missile', 'rocketeer', 'rocket'];
 
 /** Everything except projectiles, which have a texture and no name. */
 export const NAMED_ROLES = ROLES.filter((role) => !['ball', 'missile', 'rocket'].includes(role));
@@ -23,6 +23,7 @@ export const hasSigns = (mapId) => mapId === BUS_MAP;
 export const ROLE_LABELS = {
   player: 'Player',
   companion: 'Player companion',
+  companion2: 'Second companion (bought in the shop)',
   hostage: 'Hostage',
   enemy1: 'Enemy 1 (strong, rare)',
   enemy2: 'Enemy 2 (weak, common)',
@@ -40,6 +41,7 @@ const SPAWNING = ['spawnChance', 'firstSpawn', 'maxAlive'];
 export const ROLE_FIELDS = {
   player: [...COMBAT, 'fireInterval'],
   companion: ['enabled', ...COMBAT, 'fireInterval'],
+  companion2: ['enabled', ...COMBAT, 'fireInterval'],
   hostage: ['size'],
   enemy1: ['enabled', ...SPAWNING, ...COMBAT, 'xp', 'attackType'],
   enemy2: ['enabled', ...SPAWNING, ...COMBAT, 'xp', 'attackType'],
@@ -56,6 +58,7 @@ export const ROLE_FIELDS = {
 export const SOUND_SLOTS = {
   player: ['shoot'],
   companion: ['idle', 'shoot'],
+  companion2: ['idle', 'shoot'],
   hostage: ['idle'],
   enemy1: ['idle', 'shoot', 'impact'],
   enemy2: ['idle', 'shoot', 'impact'],
@@ -123,6 +126,14 @@ export const GAMEPLAY_FIELDS = {
   upgradeDamage: { label: 'Damage upgrade (% of base damage)', min: 1, max: 5000, step: 1 },
   upgradeHealth: { label: 'Health added by the upgrade', min: 1, max: 100000, step: 1 },
   upgradeFireRate: { label: 'Fire rate upgrade (% faster)', min: 1, max: 1000, step: 1 },
+  upgradeRegen: { label: 'Health replenished per second, per upgrade', min: 0.1, max: 1000, step: 0.1 },
+  laserInterval: { label: 'Personal laser: seconds between shots', min: 0.05, max: 10, step: 0.01 },
+  laserRange: { label: 'Personal laser: reach', min: 40, max: 2000, step: 10 },
+  upgradeLaserRate: { label: 'Laser recharge upgrade (% faster)', min: 1, max: 1000, step: 1 },
+  upgradeLaserRange: { label: 'Laser reach added by the upgrade', min: 1, max: 2000, step: 1 },
+  upgradeCompanionDamage: { label: 'Companion damage upgrade (% of base damage)', min: 1, max: 5000, step: 1 },
+  upgradeCompanionFireRate: { label: 'Companion fire rate upgrade (% faster)', min: 1, max: 1000, step: 1 },
+  upgradeCompanionHealth: { label: 'Companion health upgrade (% of base health)', min: 1, max: 5000, step: 1 },
 };
 
 // Set per map. How likely each character is lives on the character itself, as `spawnChance`.
@@ -173,15 +184,15 @@ export const MAX_SIGN_LENGTH = 48;
 
 const NAMES = {
   grid: {
-    map: 'The Grid', player: 'Runner', companion: 'Scout', hostage: 'Hostage',
+    map: 'The Grid', player: 'Runner', companion: 'Scout', companion2: 'Sentry', hostage: 'Hostage',
     enemy1: 'Brute', enemy2: 'Stalker', boss: 'Warden', enemy5: 'Overseer', jet: 'Su-34',
   },
   forest: {
-    map: 'Burnt Forest', player: 'Ranger', companion: 'Hound', hostage: 'Pilot',
+    map: 'Burnt Forest', player: 'Ranger', companion: 'Hound', companion2: 'Bear', hostage: 'Pilot',
     enemy1: 'Ironback', enemy2: 'Scavenger', boss: 'Tank Lord', enemy5: 'Colossus', jet: 'Su-34',
   },
   wasteland: {
-    map: 'White Wasteland', player: 'Drifter', companion: 'Husky', hostage: 'Surveyor',
+    map: 'White Wasteland', player: 'Drifter', companion: 'Husky', companion2: 'Polar Bear', hostage: 'Surveyor',
     enemy1: 'Frostback', enemy2: 'Scrapper', boss: 'Snow King', enemy5: 'Glacier', jet: 'Su-34', rocketeer: 'Rocketeer',
   },
 };
@@ -195,6 +206,7 @@ function defaultCharacters(map) {
   const characters = {
     player: { name: names.player, sprite: null, size: 46, hp: 100, speed: 255, damage: 18, fireInterval: 0.26 },
     companion: { name: names.companion, sprite: null, enabled: true, size: 40, hp: 80, speed: 285, damage: 10, fireInterval: 0.4 },
+    companion2: { name: names.companion2, sprite: null, enabled: true, size: 48, hp: 140, speed: 235, damage: 24, fireInterval: 0.75 },
     hostage: { name: names.hostage, sprite: null, size: 44 },
     enemy1: { name: names.enemy1, sprite: null, enabled: true, spawnChance: 0.14, firstSpawn: 0, maxAlive: 0, size: 62, hp: 130, speed: 135, damage: 20, xp: 40, attackType: 'melee' },
     enemy2: { name: names.enemy2, sprite: null, enabled: true, spawnChance: 0.82, firstSpawn: 0, maxAlive: 0, size: 36, hp: 32, speed: 180, damage: 8, xp: 10, attackType: 'melee' },
@@ -263,6 +275,14 @@ export function defaultConfig() {
       upgradeDamage: 20,
       upgradeHealth: 20,
       upgradeFireRate: 20,
+      upgradeRegen: 1,
+      laserInterval: 0.9,
+      laserRange: 190,
+      upgradeLaserRate: 25,
+      upgradeLaserRange: 40,
+      upgradeCompanionDamage: 25,
+      upgradeCompanionFireRate: 20,
+      upgradeCompanionHealth: 25,
     },
   };
 }

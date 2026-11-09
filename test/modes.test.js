@@ -609,7 +609,7 @@ describe('rocket interception', () => {
 
     const ally = quiet();
     ally.player.cool = 9999;
-    ally.companions.push({ x: 0, y: 40, vx: 0, vy: 0, hp: 80, maxHp: 80, r: 16, cool: 0, flash: 0, face: 1, down: 0 });
+    ally.companions.push({ x: 0, y: 40, vx: 0, vy: 0, hp: 80, maxHp: 80, r: 16, cool: 0, flash: 0, face: 1, down: 0, role: 'companion' });
     rocketAt(ally, 300, 40);
     step(ally, DT, still);
     assert.ok(ally.shots.some((shot) => shot.ally && shot.vx > 0));
@@ -961,7 +961,7 @@ describe('kamikaze', () => {
   it('can slam into a companion instead', () => {
     const s = game();
     s.player.x = 5000;
-    const m = { x: 0, y: 0, vx: 0, vy: 0, hp: 80, maxHp: 80, r: 16, cool: 0, flash: 0, face: 1, down: 0 };
+    const m = { x: 0, y: 0, vx: 0, vy: 0, hp: 80, maxHp: 80, r: 16, cool: 0, flash: 0, face: 1, down: 0, role: 'companion' };
     s.companions.push(m);
     const e = bomber(s, 20);
     s.enemies.length = 0;

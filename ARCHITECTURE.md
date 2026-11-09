@@ -34,7 +34,7 @@ are deleted on every commit. A monotonically increasing `revision` gives optimis
   cache can be dropped at any time and nothing is stored. Trees and tanks are circles to collision. Actors slide around
   them and big actors count as slim so they fit between trees. Bullets stop on them; enemy 5's ball does not. The start and
   the boss arena are kept clear.
-- `enabled` on a role removes it from that map: spawns, the roster, the companion upgrade, and for the boss the fight itself, so
+- `enabled` on a role removes it from that map: spawns, the roster, the companion shop items, and for the boss the fight itself, so
   the hostage is free from the start.
 - The difficulty level is `1 + floor(kills / difficultyKills)`. Each level adds `difficultyIncrease` percent of the base health,
   damage and XP. Spawns take the level they appear at; the boss is rescaled
@@ -58,12 +58,14 @@ are deleted on every commit. A monotonically increasing `revision` gives optimis
   the player's view and do no contact damage.
 - The boss's attack type replaces its primary attack: pump is the fan plus the ring, sniper is single fast bullets, and
   melee fires nothing but charges more often. All three keep the charge.
-- Destroyed regular enemies drop XP orbs (`xp` per role). Orbs drift to a nearby player and vanish if left far behind. At
-  `xpToUpgrade` the state becomes `levelup`, which `step` ignores, so the world is truly frozen until `applyUpgrade`. XP
-  over the threshold carries over and can open the menu again at once.
-- Upgrades belong to the run (`s.gun`, `s.companions`, `player.maxHp`) and never change the admin's config: pump gun, a
-  percentage more of base damage (additive), a percentage faster firing (additive), more health, one more companion (at most six), and bullets piercing one more enemy. Companions keep their own
-  plain gun.
+- Destroyed regular enemies drop XP orbs (`xp` per role). Orbs drift to a nearby player and vanish if left far behind. Every
+  `xpToUpgrade` XP banks one upgrade point and shows a notice; the game carries on and points wait until they are spent.
+- The upgrade shop opens with B on a keyboard or the Shop button on phones. The page stops calling `step` while it is open, so the world is truly frozen, and the shop closes by itself when the last point is spent. `applyUpgrade` spends one point. Three sections (`SHOP_SECTIONS`):
+  - Weapons: pump gun, a percentage more of base damage (additive), a percentage faster firing (additive), bullets piercing one more enemy.
+  - Defense: more health, health replenishment (health per second, stacking), the personal laser, and laser upgrades for recharge, reach and bullets per shot. The laser burns the nearest enemy bullets within reach that are flying towards the player, then recharges. Enemy 5's large ball, rockets and Kh-29s are out of its scope.
+  - Companions: the first companion, the second companion, and damage, fire rate and health upgrades shared by the whole team. Companion upgrades need a companion first, and the team stops at six of any mix.
+- Upgrades belong to the run (`s.gun`, `s.companions`, `s.companionBoost`, `s.laser`, `player.maxHp`, `player.regen`) and never change the admin's config.
+- The second companion (`companion2`) is a full role with its own name, image, sounds and stats on every map. It tends to be slower and tougher, with a harder but slower gun, and only ever joins from the shop.
 - The boss sleeps until the player enters the arena or shoots it, cannot leave the arena, and heals if the player
   runs far enough to make it go home. Under half health its attacks speed up.
 - The game is won only by touching the hostage after the boss is dead, and lost at zero player health.
@@ -80,16 +82,16 @@ Endless runs rank separately, by most kills and longest run, and share the map's
 
 ## Sound
 
-There are no built-in sounds. Each map's characters have upload slots (`SOUND_SLOTS`), and an empty slot is silent. The simulation emits `shot` and `kamikaze` events naming the role. `sound.js` turns these into one-shots that fade with distance, and each frame loops the idle sound of every role with an actor nearby and the boss theme while a boss is on screen. The theme keeps playing through the upgrade menu; idle sounds stop there, and pausing or the end of a run stops everything. Audio needs a user gesture, so the context starts on the first press.
+There are no built-in sounds. Each map's characters have upload slots (`SOUND_SLOTS`), and an empty slot is silent. The simulation emits `shot` and `kamikaze` events naming the role. `sound.js` turns these into one-shots that fade with distance, and each frame loops the idle sound of every role with an actor nearby and the boss theme while a boss is on screen. The theme keeps playing through the upgrade shop; idle sounds stop there, and pausing or the end of a run stops everything. Audio needs a user gesture, so the context starts on the first press.
 
-Slots: player shoot; companion idle and shoot; hostage idle; enemies, Su-34 and Rocketeer idle and shoot (a melee hit counts as the shoot sound); enemy 1 and 2 also have the kamikaze impact; boss theme only.
+Slots: player shoot; both companions idle and shoot; hostage idle; enemies, Su-34 and Rocketeer idle and shoot (a melee hit counts as the shoot sound); enemy 1 and 2 also have the kamikaze impact; boss theme only.
 
 Sounds are stored by content hash in `sounds/`, and unreferenced files are removed on every commit like sprites. The admin's browser keeps MP3 as it is and converts anything else to WAV at the best quality under 16 MB. The server walks the structure, keeps only the audio frames or samples, and never decodes anything. Playback uses `fetch` and Web Audio, so the CSP has no media source.
 
 ## Page layout
 
 `data-layout` on `<body>` is `mobile` for coarse pointers or narrow windows. Admin-chosen section order is applied
-with CSS `order`. Desktop shows title and game; mobile adds the panel with the move and aim sticks. A phone in landscape puts one stick on
+with CSS `order`. Desktop shows title and game, and opens the shop with B; mobile adds the panel with the move and aim sticks and a Shop button in the HUD. A phone in landscape puts one stick on
 each side of the game because there is not enough height to stack them.
 
 ## Admin data flow

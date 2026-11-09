@@ -33,6 +33,15 @@ const WIDEST_VIEW = 3400;
 const PLAYER_PUMP = { pellets: 5, spread: 0.15, ttl: 0.46, damageFactor: 0.55, intervalFactor: 1.7 };
 export const CELL_SIZE = 80;
 
+/** What the shop sells, section by section. */
+export const SHOP_SECTIONS = [
+  { id: 'weapons', items: ['pump', 'damage', 'fireRate', 'pierce'] },
+  { id: 'defense', items: ['health', 'regen', 'laser', 'laserRate', 'laserRange', 'laserBeams'] },
+  { id: 'companions', items: ['companion', 'companion2', 'companionDamage', 'companionFireRate', 'companionHealth'] },
+];
+const NEEDS_LASER = new Set(['laserRate', 'laserRange', 'laserBeams']);
+const NEEDS_COMPANION = new Set(['companionDamage', 'companionFireRate', 'companionHealth']);
+
 const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 const radius = (size) => size * 0.42;
 
@@ -96,8 +105,12 @@ export function createGame(cfg, { rng = Math.random, view = { halfW: 500, halfH:
     crewedBuses: new Set(),
     status: 'playing',
     time: 0, kills: 0, level: 1, spawnT: 1.4, grace: 0,
-    player: actor(0, 0, c.player),
+    player: { ...actor(0, 0, c.player), regen: 0 },
     companions: [],
+    companionBoost: { damagePercent: 0, fireRatePercent: 0, healthPercent: 0 },
+    laser: null, // the personal laser, once bought
+    upgradePoints: 0,
+    bought: {}, // how many of each shop item this run
     naturalCompanion: false,
     hostage, boss,
     enemies: [], shots: [], bullets: [], orbs: [], missiles: [],
@@ -172,7 +185,7 @@ function pushShots(s, shooter, weapon, angle) {
       pierce: weapon.pierce ?? 0,
     });
   }
-  emit(s, 'shot', { role: shooter === s.player ? 'player' : 'companion', x: shooter.x, y: shooter.y });
+  emit(s, 'shot', { role: shooter === s.player ? 'player' : shooter.role, x: shooter.x, y: shooter.y });
 }
 
 /** Aim stick held: fire that way even with no enemy in range. */
@@ -257,7 +270,7 @@ function hurtCompanion(s, m, damage) {
   if (m.hp <= 0) {
     m.hp = 0;
     m.down = 9;
-    emit(s, 'companionDown', { x: m.x, y: m.y });
+    emit(s, 'companionDown', { x: m.x, y: m.y, role: m.role });
   }
 }
 
@@ -454,10 +467,18 @@ function updateSpawning(s, dt) {
   if (roaming < s.cfg.gameplay.maxEnemies) spawnEnemy(s);
 }
 
-function addCompanion(s) {
-  const m = { ...actor(s.player.x - 60, s.player.y + 40, s.cfg.characters.companion), down: 0 };
+function addCompanion(s, role = 'companion') {
+  const ch = s.cfg.characters[role];
+  const hp = ch.hp * (1 + s.companionBoost.healthPercent / 100);
+  const m = { ...actor(s.player.x - 60, s.player.y + 40, { size: ch.size, hp }), down: 0, role };
   s.companions.push(m);
-  emit(s, 'companion', { x: m.x, y: m.y });
+  emit(s, 'companion', { x: m.x, y: m.y, role });
+}
+
+/** A companion's gun after the team's upgrades. */
+function companionWeapon(s, ch) {
+  const { damagePercent, fireRatePercent } = s.companionBoost;
+  return { damage: ch.damage * (1 + damagePercent / 100), fireInterval: ch.fireInterval / (1 + fireRatePercent / 100) };
 }
 
 function maybeSpawnCompanion(s) {
@@ -470,7 +491,7 @@ function maybeSpawnCompanion(s) {
 }
 
 function updateCompanion(s, m, index, dt) {
-  const ch = s.cfg.characters.companion;
+  const ch = s.cfg.characters[m.role];
   if (m.down > 0) {
     m.down -= dt;
     if (m.down <= 0) {
@@ -478,7 +499,7 @@ function updateCompanion(s, m, index, dt) {
       m.hp = m.maxHp;
       m.x = s.player.x - 50;
       m.y = s.player.y + 40;
-      emit(s, 'companion', { x: m.x, y: m.y, revived: true });
+      emit(s, 'companion', { x: m.x, y: m.y, role: m.role, revived: true });
     }
     return;
   }
@@ -496,7 +517,7 @@ function updateCompanion(s, m, index, dt) {
   m.y += m.vy * dt;
   pushOutOfSolids(s.world, m, dt);
   if (Math.abs(m.vx) > 5) m.face = Math.sign(m.vx);
-  fireAt(s, m, ch, dt);
+  fireAt(s, m, companionWeapon(s, ch), dt);
 }
 
 function chaseTarget(s, e) {
@@ -825,6 +846,24 @@ function interceptRocket(s, shot) {
   return true;
 }
 
+/** The personal laser burns the nearest bullets flying at the player. The large ball is too big for it. */
+function updateLaser(s, dt) {
+  const { laser, player: p } = s;
+  if (!laser) return;
+  laser.cool = Math.max(0, laser.cool - dt);
+  if (laser.cool > 0) return;
+  const { laserRange, laserInterval } = s.cfg.gameplay;
+  const reach = laserRange + laser.bonusRange;
+  const incoming = s.bullets.filter((b) => !b.ball && dist(b, p) <= reach && (p.x - b.x) * b.vx + (p.y - b.y) * b.vy > 0);
+  if (!incoming.length) return;
+  incoming.sort((a, b) => dist(a, p) - dist(b, p));
+  for (const b of incoming.slice(0, laser.beams)) {
+    s.bullets.splice(s.bullets.indexOf(b), 1);
+    emit(s, 'laser', { x: b.x, y: b.y });
+  }
+  laser.cool = laserInterval / (1 + laser.ratePercent / 100);
+}
+
 function updateBullets(s, dt) {
   for (let i = s.bullets.length - 1; i >= 0; i--) {
     const b = s.bullets[i];
@@ -851,12 +890,14 @@ function updateBullets(s, dt) {
   }
 }
 
-function checkLevelUp(s) {
+/** Each full bar of XP banks one point to spend in the shop. The game keeps running. */
+function bankUpgradePoints(s) {
   const need = s.cfg.gameplay.xpToUpgrade;
-  if (s.status !== 'playing' || s.xp < need) return;
-  s.xp -= need;
-  s.status = 'levelup';
-  emit(s, 'levelUp');
+  if (s.xp < need) return;
+  const earned = Math.floor(s.xp / need);
+  s.xp -= earned * need;
+  s.upgradePoints += earned;
+  emit(s, 'upgradeReady');
 }
 
 function updateOrbs(s, dt) {
@@ -875,32 +916,71 @@ function updateOrbs(s, dt) {
       o.y += ((p.y - o.y) / d) * ORB_SPEED * dt;
     }
   }
-  checkLevelUp(s);
+  bankUpgradePoints(s);
 }
 
-/** The upgrades on offer right now. */
+/** ready, owned, full, needsLaser, needsCompanion, or off when this map does not have it. */
+function upgradeState(s, id) {
+  const c = s.cfg.characters;
+  if (id === 'pump' && s.gun.pump) return 'owned';
+  if (id === 'laser' && s.laser) return 'owned';
+  if (NEEDS_LASER.has(id) && !s.laser) return 'needsLaser';
+  if (id === 'companion' || id === 'companion2') {
+    if (!c[id].enabled) return 'off';
+    return s.companions.length >= MAX_COMPANIONS ? 'full' : 'ready';
+  }
+  if (NEEDS_COMPANION.has(id)) {
+    if (!c.companion.enabled && !c.companion2.enabled) return 'off';
+    if (!s.companions.length) return 'needsCompanion';
+  }
+  return 'ready';
+}
+
+/** The shop as it stands right now: every section this map has, with each item's state and how many were bought. */
+export function shopSections(s) {
+  return SHOP_SECTIONS.map(({ id, items }) => ({
+    id,
+    items: items.map((item) => ({ id: item, state: upgradeState(s, item), bought: s.bought[item] ?? 0 })).filter((item) => item.state !== 'off'),
+  })).filter((section) => section.items.length);
+}
+
+/** The upgrades that could be bought right now, given a point to spend. */
 export function availableUpgrades(s) {
-  const ids = ['damage', 'fireRate', 'health', 'companion', 'pierce'];
-  if (s.companions.length >= MAX_COMPANIONS || !s.cfg.characters.companion.enabled) ids.splice(ids.indexOf('companion'), 1);
-  if (!s.gun.pump) ids.unshift('pump');
-  return ids;
+  return SHOP_SECTIONS.flatMap((section) => section.items).filter((id) => upgradeState(s, id) === 'ready');
 }
 
-/** Applies a choice from the level-up menu and resumes the game. Returns false if it was not on offer. */
+function boostCompanionHealth(s, percent) {
+  s.companionBoost.healthPercent += percent;
+  for (const m of s.companions) {
+    const maxHp = s.cfg.characters[m.role].hp * (1 + s.companionBoost.healthPercent / 100);
+    if (!m.down) m.hp += maxHp - m.maxHp; // a downed companion comes back at full health anyway
+    m.maxHp = maxHp;
+  }
+}
+
+/** Spends one point on an upgrade. Returns false if there is no point to spend or it is not on offer. */
 export function applyUpgrade(s, id) {
-  if (s.status !== 'levelup' || !availableUpgrades(s).includes(id)) return false;
+  if (s.status !== 'playing' || s.upgradePoints < 1 || !availableUpgrades(s).includes(id)) return false;
   const g = s.cfg.gameplay;
   if (id === 'pump') s.gun.pump = true;
   if (id === 'damage') s.gun.damagePercent += g.upgradeDamage;
   if (id === 'fireRate') s.gun.fireRatePercent += g.upgradeFireRate;
   if (id === 'pierce') s.gun.pierce += 1;
-  if (id === 'companion') addCompanion(s);
+  if (id === 'companion' || id === 'companion2') addCompanion(s, id);
   if (id === 'health') {
     s.player.maxHp += g.upgradeHealth;
     s.player.hp += g.upgradeHealth;
   }
-  s.status = 'playing';
-  checkLevelUp(s); // XP left over can already pay for the next one
+  if (id === 'regen') s.player.regen += g.upgradeRegen;
+  if (id === 'laser') s.laser = { cool: 0, ratePercent: 0, bonusRange: 0, beams: 1 };
+  if (id === 'laserRate') s.laser.ratePercent += g.upgradeLaserRate;
+  if (id === 'laserRange') s.laser.bonusRange += g.upgradeLaserRange;
+  if (id === 'laserBeams') s.laser.beams += 1;
+  if (id === 'companionDamage') s.companionBoost.damagePercent += g.upgradeCompanionDamage;
+  if (id === 'companionFireRate') s.companionBoost.fireRatePercent += g.upgradeCompanionFireRate;
+  if (id === 'companionHealth') boostCompanionHealth(s, g.upgradeCompanionHealth);
+  s.upgradePoints -= 1;
+  s.bought[id] = (s.bought[id] ?? 0) + 1;
   return true;
 }
 
@@ -936,6 +1016,7 @@ export function step(s, dt, input) {
   pushOutOfSolids(s.world, p, dt);
   if (Math.abs(p.vx) > 5) p.face = Math.sign(p.vx);
   p.flash = Math.max(0, p.flash - dt);
+  p.hp = Math.min(p.maxHp, p.hp + p.regen * dt);
 
   const aimLength = Math.hypot(input.aimX ?? 0, input.aimY ?? 0);
   p.aim = aimLength > 0 ? { x: input.aimX / aimLength, y: input.aimY / aimLength } : null;
@@ -956,6 +1037,7 @@ export function step(s, dt, input) {
   updateEnemies(s, dt);
   updateBoss(s, dt);
   updateShots(s, dt);
+  updateLaser(s, dt);
   updateBullets(s, dt);
   updateMissiles(s, dt);
   if (s.status === 'playing') updateOrbs(s, dt);

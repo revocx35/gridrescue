@@ -4,6 +4,8 @@ import { CELL_SIZE } from './sim.js';
 
 const ART_SIZE = 256;
 const TAU = Math.PI * 2;
+const LASER_COLOR = '#7fe9ff';
+const BEAM_SECONDS = 0.14;
 const SIGN_WIDTH = 150;
 const SIGN_BOARD_WIDTH = 176;
 const SIGN_LINE = 17;
@@ -68,6 +70,13 @@ const ART = {
     c.fillStyle = '#123022'; disc(c, 50, 48, 16);
     c.fillStyle = '#d6ffe0'; disc(c, 55, 45, 7);
     c.fillStyle = '#2d7a43'; tile(c, 40, 74, 20, 12, 5);
+  },
+  companion2(c) {
+    c.fillStyle = '#8a5a12'; tile(c, 10, 30, 80, 14, 7); tile(c, 22, 76, 18, 14, 5); tile(c, 60, 76, 18, 14, 5);
+    c.fillStyle = '#ffb347'; tile(c, 18, 24, 64, 58, 16);
+    c.fillStyle = '#3a2506'; tile(c, 30, 36, 40, 18, 8);
+    c.fillStyle = '#ffe9b8'; disc(c, 41, 45, 5); disc(c, 59, 45, 5);
+    c.fillStyle = '#8a5a12'; tile(c, 44, 8, 12, 18, 4);
   },
   hostage(c) {
     c.fillStyle = '#b98a4a'; tile(c, 30, 44, 40, 46, 12);
@@ -140,6 +149,12 @@ const FOREST_ART = {
     c.fillStyle = '#e8d3b3'; tile(c, 34, 52, 32, 30, 14);
     c.fillStyle = '#1f130a'; disc(c, 38, 42, 5); disc(c, 62, 42, 5); tile(c, 43, 54, 14, 10, 5);
   },
+  companion2(c) {
+    c.fillStyle = '#3f2a18'; disc(c, 22, 22, 13); disc(c, 78, 22, 13);
+    c.fillStyle = '#5c3d22'; disc(c, 50, 52, 38);
+    c.fillStyle = '#b08a60'; tile(c, 34, 54, 32, 30, 14);
+    c.fillStyle = '#120b05'; disc(c, 36, 42, 5); disc(c, 64, 42, 5); tile(c, 43, 56, 14, 10, 5);
+  },
   hostage(c) {
     c.fillStyle = '#d9772b'; tile(c, 28, 44, 44, 46, 12);
     c.strokeStyle = '#3a2410'; c.lineWidth = 6; c.lineCap = 'round';
@@ -201,6 +216,12 @@ const WASTELAND_ART = {
     c.fillStyle = '#eef2f5'; tile(c, 32, 50, 36, 34, 15);
     c.fillStyle = '#7fd4ff'; disc(c, 38, 42, 5); disc(c, 62, 42, 5);
     c.fillStyle = '#14181d'; tile(c, 44, 56, 12, 9, 4);
+  },
+  companion2(c) {
+    c.fillStyle = '#c9d6e0'; disc(c, 22, 22, 13); disc(c, 78, 22, 13);
+    c.fillStyle = '#f2f6fa'; disc(c, 50, 52, 38);
+    c.fillStyle = '#dbe5ee'; tile(c, 34, 54, 32, 30, 14);
+    c.fillStyle = '#14181d'; disc(c, 36, 42, 5); disc(c, 64, 42, 5); tile(c, 43, 56, 14, 10, 5);
   },
   hostage(c) {
     c.fillStyle = '#d8a72a'; tile(c, 28, 44, 44, 46, 12);
@@ -443,6 +464,7 @@ export class Renderer {
     this.camera = null;
     this.particles = [];
     this.rings = [];
+    this.beams = [];
     this.shake = 0;
     this.clock = 0;
     this.reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -518,6 +540,9 @@ export class Renderer {
       this.burst(event.x, event.y, accent2, 120, 520);
       this.rings.push({ x: event.x, y: event.y, ttl: 1, total: 1, color: accent2, reach: 620 });
       this.shake = 18;
+    } else if (event.type === 'laser') {
+      this.beams.push({ x: event.x, y: event.y, ttl: BEAM_SECONDS });
+      this.burst(event.x, event.y, LASER_COLOR, 6, 140);
     } else if (event.type === 'companion') {
       this.rings.push({ x: event.x, y: event.y, ttl: 0.7, total: 0.7, color: accent, reach: 120 });
     }
@@ -947,6 +972,30 @@ export class Renderer {
     ctx.restore();
   }
 
+  /** The laser's emitter floats beside the player; recent shots are beams from it to where the bullet was. */
+  #drawLaser(ctx, s, playerSize, dt) {
+    const x = s.player.x + playerSize * 0.48;
+    const y = s.player.y - playerSize * 0.48;
+    ctx.strokeStyle = LASER_COLOR;
+    ctx.lineCap = 'round';
+    for (let i = this.beams.length - 1; i >= 0; i--) {
+      const beam = this.beams[i];
+      beam.ttl -= dt;
+      if (beam.ttl <= 0) { this.beams.splice(i, 1); continue; }
+      ctx.globalAlpha = beam.ttl / BEAM_SECONDS;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.lineTo(beam.x, beam.y);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = LASER_COLOR;
+    ctx.beginPath();
+    ctx.arc(x, y, 5, 0, TAU);
+    ctx.fill();
+  }
+
   #label(ctx, text, x, y, color = '#fff', font = 12) {
     ctx.font = `700 ${font}px ui-sans-serif, system-ui, sans-serif`;
     ctx.textAlign = 'center';
@@ -1014,7 +1063,7 @@ export class Renderer {
       this.#drawActor(ctx, 'boss', s.boss, s.boss.size);
     }
     for (const m of s.companions) {
-      if (!m.down) this.#drawActor(ctx, 'companion', m, characters.companion.size, walk * 0.7);
+      if (!m.down) this.#drawActor(ctx, m.role, m, characters[m.role].size, walk * 0.7);
     }
     this.#drawAimLines(ctx, s);
     this.#drawActor(ctx, 'player', s.player, characters.player.size, Math.hypot(s.player.vx, s.player.vy) > 5 ? walk : 0);
@@ -1041,6 +1090,8 @@ export class Renderer {
       ctx.arc(b.x, b.y, b.r * 0.45, 0, TAU);
       ctx.fill();
     }
+
+    if (s.laser) this.#drawLaser(ctx, s, characters.player.size, dt);
 
     for (let i = this.particles.length - 1; i >= 0; i--) {
       const p = this.particles[i];
@@ -1081,7 +1132,7 @@ export class Renderer {
       this.#label(ctx, characters.hostage.name, s.hostage.x, s.hostage.y - characters.hostage.size / 2 - 32, '#ffd9a8', 13);
     }
     for (const m of s.companions) {
-      if (!m.down) this.#label(ctx, characters.companion.name, m.x, m.y - characters.companion.size / 2 - 7, '#b7f7c4');
+      if (!m.down) this.#label(ctx, characters[m.role].name, m.x, m.y - characters[m.role].size / 2 - 7, '#b7f7c4');
     }
     this.#label(ctx, characters.player.name, s.player.x, s.player.y - characters.player.size / 2 - 7, '#fff');
   }

@@ -6,7 +6,7 @@ joystick on phones.
 
 Nobody needs an account to play. An admin signs in through [Authentik](https://goauthentik.io/) to edit the game:
 
-- three maps, each with its own name and its own full cast: name and image for the player, companion, hostage, enemy 1,
+- three maps, each with its own name and its own full cast: name and image for the player, both companions, hostage, enemy 1,
   enemy 2, enemy 3 (the boss), enemy 5 and the Su-34, plus the textures of enemy 5's large ball and the Kh-29 missile.
   The White Wasteland adds the Rocketeer and its rocket, and the admin writes the text on its signs
 - sound effects for every character, per map: idle and shoot sounds, the impact sound of a kamikaze attack and the boss's
@@ -15,7 +15,7 @@ Nobody needs an account to play. An admin signs in through [Authentik](https://g
 - the site menu: game title, tagline, button and end-screen text, colours, page order for desktop and mobile,
   joystick size and which side the movement stick is on
 - each enemy's attack type: melee, sniper (one bullet), pump (spread), kamikaze (slams into you and dies) or boss attack (fan, ring and charge, like the boss in Rescue)
-- XP dropped by each enemy, XP needed per upgrade, the size of the damage, fire rate and health upgrades
+- XP dropped by each enemy, XP needed per upgrade, and the size of every shop upgrade, including the personal laser and companion upgrades
 - how many kills raise the difficulty level and how much each level strengthens enemies
 - the leaderboard: delete single scores or clear a map
 - spawn rates: how often enemies appear and how many at once for each map, and for each character a spawn rate, the seconds before its first spawn and the most at once
@@ -34,8 +34,8 @@ Nobody needs an account to play. An admin signs in through [Authentik](https://g
 | Enemy 5 | The strongest and rarest enemy. Throws a large ball every 3 seconds that rolls through cover |
 | Su-34 | Very rare. Crosses the screen firing guided Kh-29 missiles, which chase you until you click or tap them, or they run out of fuel. Bullets pass through them |
 | Difficulty | Every 25 kills raises the level. Enemies gain 10% health, damage and XP per level, but no speed or size |
-| Companion | Joins after enough kills, or as you get close to the hostage, whichever comes first |
-| Upgrades | Destroyed enemies drop XP. Every 200 XP the game freezes and you pick one: pump gun, 20% more damage, 20% faster firing, more health, one more companion, or bullets that pass through one more enemy |
+| Companion | The first one also joins for free after enough kills, or as you get close to the hostage, whichever comes first |
+| Upgrades | Destroyed enemies drop XP and every 200 XP earns one upgrade to spend. Press B, or tap Shop on a phone, to open the shop, which pauses the game. Weapons: pump gun, damage, fire rate, piercing bullets. Defense: health, health replenishment, a personal laser that shoots down incoming bullets, and laser upgrades. Companions: two different companions and upgrades for them |
 | Win | Defeat the boss, then reach the hostage |
 | Leaderboard | Enter a name when a run ends to join the global tables for that map. Wins count for fastest rescue and most kills; deaths with at least one kill count for most kills. Endless has its own tables: most kills and longest run |
 

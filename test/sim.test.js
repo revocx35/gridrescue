@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { defaultConfig, mapConfig } from '../public/js/schema.js';
 import { forEachItemIn, hitsSolid } from '../public/js/scenery.js';
-import { applyUpgrade, availableUpgrades, createGame, destroyMissileAt, scoreLimits, step } from '../public/js/sim.js';
+import { SHOP_SECTIONS, applyUpgrade, availableUpgrades, createGame, destroyMissileAt, scoreLimits, shopSections, step } from '../public/js/sim.js';
 
 const DT = 1 / 60;
 
@@ -435,7 +435,7 @@ describe('XP and upgrades', () => {
     return s;
   }
   const levelUp = (s) => {
-    s.status = 'levelup';
+    s.upgradePoints += 1;
   };
   const giveOrb = (s, xp) => s.orbs.push({ x: s.player.x, y: s.player.y, xp });
 
@@ -491,48 +491,247 @@ describe('XP and upgrades', () => {
     assert.equal(s.xp, 0);
   });
 
-  it('freezes the game at the threshold and keeps it frozen', () => {
+  it('banks a point at the threshold and keeps playing', () => {
     const s = quiet();
     giveOrb(s, 200);
     step(s, DT, still);
-    assert.equal(s.status, 'levelup');
-    assert.ok(s.events.some((e) => e.type === 'levelUp'));
-    const before = { x: s.player.x, time: s.time };
-    placeEnemy(s, 'enemy1', 5, 0);
-    for (let i = 0; i < 120; i++) step(s, DT, { x: 1, y: 0 });
-    assert.equal(s.player.x, before.x);
-    assert.equal(s.time, before.time);
-    assert.equal(s.player.hp, s.player.maxHp);
+    assert.equal(s.status, 'playing');
+    assert.equal(s.upgradePoints, 1);
+    assert.ok(s.events.some((e) => e.type === 'upgradeReady'));
+    const { time } = s;
+    step(s, DT, { x: 1, y: 0 });
+    assert.ok(s.time > time);
+    assert.ok(s.player.x > 0);
   });
 
-  it('does not level up below the threshold', () => {
+  it('does not bank a point below the threshold', () => {
     const s = quiet();
     giveOrb(s, 199);
     step(s, DT, still);
-    assert.equal(s.status, 'playing');
+    assert.equal(s.upgradePoints, 0);
+    assert.equal(s.events.some((e) => e.type === 'upgradeReady'), false);
   });
 
-  it('keeps leftover XP and resumes after a choice', () => {
+  it('keeps leftover XP and spends one point per upgrade', () => {
     const s = quiet();
     giveOrb(s, 230);
     step(s, DT, still);
     assert.equal(s.xp, 30);
     assert.equal(applyUpgrade(s, 'damage'), true);
-    assert.equal(s.status, 'playing');
+    assert.equal(s.upgradePoints, 0);
+    assert.equal(applyUpgrade(s, 'damage'), false);
   });
 
-  it('asks again when leftover XP pays for another upgrade', () => {
+  it('banks several points when a big orb pays for more than one', () => {
     const s = quiet();
     giveOrb(s, 450);
     step(s, DT, still);
-    assert.equal(s.xp, 250);
-    applyUpgrade(s, 'damage');
-    assert.equal(s.status, 'levelup');
+    assert.equal(s.upgradePoints, 2);
     assert.equal(s.xp, 50);
   });
 
-  it('offers all six upgrades', () => {
-    assert.deepEqual(availableUpgrades(quiet()).sort(), ['companion', 'damage', 'fireRate', 'health', 'pierce', 'pump']);
+  it('splits the shop into weapons, defense and companions', () => {
+    assert.deepEqual(SHOP_SECTIONS.map((section) => section.id), ['weapons', 'defense', 'companions']);
+    const inSection = (id) => SHOP_SECTIONS.find((section) => section.id === id).items;
+    assert.ok(inSection('weapons').includes('pump'));
+    for (const item of ['health', 'regen', 'laser']) assert.ok(inSection('defense').includes(item));
+    for (const item of ['companion', 'companion2']) assert.ok(inSection('companions').includes(item));
+  });
+
+  it('offers only what can be bought yet', () => {
+    assert.deepEqual(
+      availableUpgrades(quiet()).sort(),
+      ['companion', 'companion2', 'damage', 'fireRate', 'health', 'laser', 'pierce', 'pump', 'regen'],
+    );
+  });
+
+  it('shows locked items with the reason and how many were bought', () => {
+    const s = quiet();
+    const item = (id) => shopSections(s).flatMap((section) => section.items).find((entry) => entry.id === id);
+    assert.equal(item('laserRate').state, 'needsLaser');
+    assert.equal(item('companionDamage').state, 'needsCompanion');
+    levelUp(s);
+    applyUpgrade(s, 'damage');
+    levelUp(s);
+    applyUpgrade(s, 'laser');
+    assert.equal(item('damage').bought, 1);
+    assert.equal(item('laser').state, 'owned');
+    assert.equal(item('laserRate').state, 'ready');
+  });
+
+  it('health replenishment heals over time, stacks, and stops at maximum', () => {
+    const s = quiet();
+    s.player.hp = 50;
+    levelUp(s);
+    applyUpgrade(s, 'regen');
+    levelUp(s);
+    applyUpgrade(s, 'regen');
+    for (let i = 0; i < 60; i++) step(s, DT, still);
+    assert.ok(Math.abs(s.player.hp - (50 + 2 * s.cfg.gameplay.upgradeRegen)) < 0.01);
+    s.player.hp = s.player.maxHp - 0.01;
+    for (let i = 0; i < 60; i++) step(s, DT, still);
+    assert.equal(s.player.hp, s.player.maxHp);
+  });
+
+  describe('personal laser', () => {
+    function armed(edit) {
+      const s = quiet(edit);
+      s.player.cool = 1e9;
+      levelUp(s);
+      applyUpgrade(s, 'laser');
+      return s;
+    }
+    const bullet = (s, x, y, vx, vy, extra = {}) => {
+      const b = { x, y, vx, vy, ttl: 5, r: 7, damage: 10, ...extra };
+      s.bullets.push(b);
+      return b;
+    };
+
+    it('shoots down a bullet coming at the player', () => {
+      const s = armed();
+      bullet(s, 150, 0, -300, 0);
+      step(s, DT, still);
+      assert.equal(s.bullets.length, 0);
+      assert.ok(s.events.some((e) => e.type === 'laser'));
+    });
+
+    it('does nothing before it is bought', () => {
+      const s = quiet();
+      bullet(s, 150, 0, -300, 0);
+      step(s, DT, still);
+      assert.equal(s.bullets.length, 1);
+    });
+
+    it('leaves bullets flying away or out of reach', () => {
+      const s = armed();
+      bullet(s, 150, 0, 300, 0);
+      bullet(s, s.cfg.gameplay.laserRange + 50, 0, -300, 0);
+      step(s, DT, still);
+      assert.equal(s.bullets.length, 2);
+    });
+
+    it('leaves the large ball alone', () => {
+      const s = armed();
+      bullet(s, 150, 0, -300, 0, { ball: true });
+      step(s, DT, still);
+      assert.equal(s.bullets.length, 1);
+    });
+
+    it('must recharge between shots, and the upgrade shortens that', () => {
+      const interval = (s) => {
+        bullet(s, 150, 0, -1, 0);
+        step(s, DT, still);
+        return s.laser.cool;
+      };
+      assert.ok(Math.abs(interval(armed()) - 0.9) < 1e-9);
+      const s = armed((c) => { c.gameplay.upgradeLaserRate = 100; });
+      levelUp(s);
+      applyUpgrade(s, 'laserRate');
+      assert.ok(Math.abs(interval(s) - 0.45) < 1e-9);
+    });
+
+    it('reaches further with the range upgrade', () => {
+      const s = armed();
+      levelUp(s);
+      applyUpgrade(s, 'laserRange');
+      bullet(s, s.cfg.gameplay.laserRange + 30, 0, -1, 0);
+      step(s, DT, still);
+      assert.equal(s.bullets.length, 0);
+    });
+
+    it('takes the nearest bullets, and more of them with the beams upgrade', () => {
+      const s = armed();
+      bullet(s, 170, 0, -1, 0);
+      const near = bullet(s, 60, 0, -1, 0);
+      bullet(s, 120, 0, -1, 0);
+      step(s, DT, still);
+      assert.equal(s.bullets.length, 2);
+      assert.equal(s.bullets.includes(near), false);
+
+      const t = armed();
+      levelUp(t);
+      applyUpgrade(t, 'laserBeams');
+      bullet(t, 170, 0, -1, 0);
+      bullet(t, 60, 0, -1, 0);
+      bullet(t, 120, 0, -1, 0);
+      step(t, DT, still);
+      assert.equal(t.bullets.length, 1);
+    });
+  });
+
+  describe('companion upgrades', () => {
+    function withBoth(edit) {
+      const s = quiet((c) => { c.gameplay.companionKills = 200; c.gameplay.companionDistance = 300; edit?.(c); });
+      levelUp(s);
+      applyUpgrade(s, 'companion');
+      levelUp(s);
+      applyUpgrade(s, 'companion2');
+      return s;
+    }
+
+    it('the second companion is its own character with its own stats', () => {
+      const s = withBoth();
+      const second = s.companions.find((m) => m.role === 'companion2');
+      assert.equal(second.maxHp, s.cfg.characters.companion2.hp);
+      assert.notEqual(s.cfg.characters.companion2.name, s.cfg.characters.companion.name);
+      placeEnemy(s, 'enemy2', second.x + 100, second.y).speed = 0;
+      s.player.cool = 1e9;
+      s.companions[0].cool = 1e9;
+      step(s, DT, still);
+      assert.equal(s.shots[0].damage, s.cfg.characters.companion2.damage);
+      assert.ok(s.events.some((e) => e.type === 'shot' && e.role === 'companion2'));
+    });
+
+    it('is not offered when the map has it switched off', () => {
+      const s = quiet((c) => { c.characters.companion2.enabled = false; });
+      assert.equal(availableUpgrades(s).includes('companion2'), false);
+      assert.equal(shopSections(s).flatMap((section) => section.items).some((item) => item.id === 'companion2'), false);
+    });
+
+    it('both companions share the team limit', () => {
+      const s = quiet((c) => { c.gameplay.companionKills = 200; c.gameplay.companionDistance = 300; });
+      for (let i = 0; i < 6; i++) { levelUp(s); applyUpgrade(s, i % 2 ? 'companion' : 'companion2'); }
+      const offered = availableUpgrades(s);
+      assert.equal(offered.includes('companion'), false);
+      assert.equal(offered.includes('companion2'), false);
+    });
+
+    it('the damage and fire rate upgrades apply to both, from base values', () => {
+      const s = withBoth((c) => { c.gameplay.upgradeCompanionDamage = 50; c.gameplay.upgradeCompanionFireRate = 100; });
+      levelUp(s);
+      applyUpgrade(s, 'companionDamage');
+      levelUp(s);
+      applyUpgrade(s, 'companionFireRate');
+      for (const m of s.companions) placeEnemy(s, 'enemy2', m.x + 100, m.y).speed = 0;
+      s.player.cool = 1e9;
+      step(s, DT, still);
+      const { companion, companion2 } = s.cfg.characters;
+      assert.deepEqual(s.shots.map((p) => p.damage).sort((a, b) => a - b), [companion.damage * 1.5, companion2.damage * 1.5]);
+      assert.ok(Math.abs(s.companions[1].cool - companion2.fireInterval / 2) < 1e-9);
+    });
+
+    it('the health upgrade raises current and maximum, and covers later companions', () => {
+      const s = quiet((c) => { c.gameplay.companionKills = 200; c.gameplay.companionDistance = 300; c.gameplay.upgradeCompanionHealth = 50; });
+      levelUp(s);
+      applyUpgrade(s, 'companion');
+      const [first] = s.companions;
+      first.hp = 10;
+      levelUp(s);
+      applyUpgrade(s, 'companionHealth');
+      const { companion, companion2 } = s.cfg.characters;
+      assert.equal(first.maxHp, companion.hp * 1.5);
+      assert.equal(first.hp, 10 + companion.hp * 0.5);
+      levelUp(s);
+      applyUpgrade(s, 'companion2');
+      assert.equal(s.companions[1].maxHp, companion2.hp * 1.5);
+    });
+
+    it('a companion upgrade cannot be bought with nobody to give it to', () => {
+      const s = quiet();
+      levelUp(s);
+      assert.equal(applyUpgrade(s, 'companionDamage'), false);
+      assert.equal(s.upgradePoints, 1);
+    });
   });
 
   it('a fire rate upgrade shortens the time between shots, and stacks', () => {
@@ -573,13 +772,13 @@ describe('XP and upgrades', () => {
     assert.ok(Math.abs(s.companions[0].cool - (s.cfg.characters.companion.fireInterval - DT * 0)) < 0.05);
   });
 
-  it('refuses a choice when no menu is open, or one not on offer', () => {
+  it('refuses a choice with no point to spend, or one not on offer', () => {
     const s = quiet();
     assert.equal(applyUpgrade(s, 'damage'), false);
     assert.equal(s.gun.damagePercent, 0);
     levelUp(s);
     assert.equal(applyUpgrade(s, 'invincible'), false);
-    assert.equal(s.status, 'levelup');
+    assert.equal(s.upgradePoints, 1);
   });
 
   it('adds damage to the shots the player fires', () => {
@@ -942,8 +1141,8 @@ describe('maps', () => {
       const s = forest(seed * 37);
       let frames = 0;
       const picks = ['damage', 'companion', 'health', 'pierce'];
-      while ((s.status === 'playing' || s.status === 'levelup') && frames < 60 * 300) {
-        if (s.status === 'levelup') applyUpgrade(s, picks[s.kills % picks.length]);
+      while (s.status === 'playing' && frames < 60 * 300) {
+        if (s.upgradePoints) applyUpgrade(s, picks[s.kills % picks.length]);
         step(s, DT, bot(s));
         frames += 1;
         s.events.length = 0;
@@ -1189,7 +1388,7 @@ describe('Su-34 and Kh-29', () => {
 
   it('clicks do nothing while the game is frozen', () => {
     const { s, m } = onlyMissile();
-    s.status = 'levelup';
+    s.status = 'won';
     assert.equal(destroyMissileAt(s, m.x, m.y, 20), false);
     assert.equal(s.missiles.length, 1);
   });
@@ -1252,8 +1451,8 @@ describe('score limits', () => {
       for (let seed = 1; seed <= 16; seed++) {
         const s = game(seed * 53, () => {}, mapId);
         const picks = ['damage', 'companion', 'health', 'pierce'];
-        for (let frames = 0; (s.status === 'playing' || s.status === 'levelup') && frames < 60 * 300; frames++) {
-          if (s.status === 'levelup') applyUpgrade(s, picks[s.kills % picks.length]);
+        for (let frames = 0; s.status === 'playing' && frames < 60 * 300; frames++) {
+          if (s.upgradePoints) applyUpgrade(s, picks[s.kills % picks.length]);
           step(s, DT, bot(s));
           s.events.length = 0;
         }
@@ -1300,8 +1499,8 @@ describe('full playthrough', () => {
       const s = game(seed * 31);
       let frames = 0;
       const picks = ['damage', 'companion', 'health', 'pierce'];
-      while ((s.status === 'playing' || s.status === 'levelup') && frames < 60 * 240) {
-        if (s.status === 'levelup') applyUpgrade(s, picks[s.kills % picks.length]);
+      while (s.status === 'playing' && frames < 60 * 240) {
+        if (s.upgradePoints) applyUpgrade(s, picks[s.kills % picks.length]);
         step(s, DT, bot(s));
         frames += 1;
         s.events.length = 0;

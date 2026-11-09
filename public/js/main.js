@@ -4,7 +4,7 @@ import { fetchBoard, postScore, renderBoard, startRun } from './leaderboard.js';
 import { Renderer, drawSpriteInBox, loadSprites } from './render.js';
 import { GAME_MODES, MAPS, MAX_SCORE_NAME_LENGTH, NAMED_ROLES, mapConfig } from './schema.js';
 import { SoundBoard } from './sound.js';
-import { applyUpgrade, availableUpgrades, createGame, destroyMissileAt, step } from './sim.js';
+import { applyUpgrade, createGame, destroyMissileAt, shopSections, step } from './sim.js';
 
 const FIXED_STEP = 1 / 60;
 const NAME_KEY = 'gridrescue-name';
@@ -14,6 +14,10 @@ const MODE_KEY = 'gridrescue-mode';
 const MISSILE_REACH = { touch: 44, mouse: 28 };
 const $ = (id) => document.getElementById(id);
 const MODE_LABELS = { rescue: 'Rescue', endless: 'Endless' };
+const SHOP_LABELS = { weapons: 'Weapons', defense: 'Defense', companions: 'Companions' };
+const SHOP_NOTES = { owned: 'Owned', full: 'Team full', needsLaser: 'Needs the laser', needsCompanion: 'Needs a companion' };
+const SHOP_PREVIOUS_TAB = ['ArrowLeft', 'KeyA'];
+const SHOP_NEXT_TAB = ['ArrowRight', 'KeyD'];
 const SECTION_IDS = { title: 'section-title', game: 'section-game', joystick: 'section-joystick' };
 
 const layoutQuery = matchMedia('(pointer: coarse), (max-width: 760px)');
@@ -175,6 +179,7 @@ class Game {
     $('overlay-action').addEventListener('click', () => this.onOverlayAction());
     $('game').addEventListener('pointerdown', (e) => this.onCanvasPress(e));
     $('pause-btn').addEventListener('click', () => this.pause());
+    $('shop-btn').addEventListener('click', () => this.openShop());
     $('score-form').addEventListener('submit', (e) => this.onScoreSubmit(e));
     $('score-name').maxLength = MAX_SCORE_NAME_LENGTH;
     $('board-toggle').addEventListener('click', () => this.toggleBoard());
@@ -250,12 +255,13 @@ class Game {
   }
 
   onKey(e) {
-    if (this.mode === 'levelup') {
-      const choice = /^Digit([1-6])$/.exec(e.code);
-      if (choice) $('upgrades').children[Number(choice[1]) - 1]?.click();
-      return; // Enter and Space act on the focused upgrade; nothing else may restart the game
+    if (this.mode === 'shop') {
+      this.onShopKey(e);
+      return; // Enter and Space act on the focused button; nothing else may restart the game
     }
-    if (e.code === 'Escape' || e.code === 'KeyP') {
+    if (e.code === 'KeyB' && this.mode === 'playing' && !e.repeat) {
+      this.openShop();
+    } else if (e.code === 'Escape' || e.code === 'KeyP') {
       if (this.mode === 'playing') this.pause();
       else if (this.mode === 'paused') this.resume();
     } else if ((e.code === 'Enter' || e.code === 'Space') && this.mode !== 'playing') {
@@ -265,17 +271,27 @@ class Game {
     }
   }
 
+  onShopKey(e) {
+    if (e.repeat) return; // holding a number must not spend every point at once
+    const choice = /^Digit([1-9])$/.exec(e.code);
+    if (choice) $('upgrades').children[Number(choice[1]) - 1]?.click();
+    else if (e.code === 'KeyB' || e.code === 'Escape') this.closeShop();
+    else if (SHOP_PREVIOUS_TAB.includes(e.code)) this.moveShopTab(-1);
+    else if (SHOP_NEXT_TAB.includes(e.code)) this.moveShopTab(1);
+  }
+
   onOverlayAction() {
-    if (this.mode === 'paused') this.resume();
+    if (this.mode === 'shop') this.closeShop();
+    else if (this.mode === 'paused') this.resume();
     else this.start();
   }
 
-  overlay({ heading, text, action, roster = false, upgrades = false, picker = false, score = false, boardButton = false }) {
+  overlay({ heading, text, action, roster = false, shop = false, picker = false, score = false, boardButton = false, hint = '' }) {
     $('overlay-heading').textContent = heading;
     $('overlay-text').textContent = text;
     $('overlay-action').textContent = action ?? '';
-    $('overlay-action').hidden = upgrades;
-    $('upgrades').hidden = !upgrades;
+    $('shop-tabs').hidden = !shop;
+    $('upgrades').hidden = !shop;
     $('roster').hidden = !roster;
     $('map-picker').hidden = !picker;
     $('mode-picker').hidden = !picker;
@@ -284,57 +300,116 @@ class Game {
     $('board-toggle').hidden = !boardButton;
     $('board-toggle').textContent = 'Leaderboard';
     if (picker) this.buildPickers();
-    $('controls-hint').hidden = !roster;
+    $('controls-hint').textContent = hint;
+    $('controls-hint').hidden = !hint;
     $('overlay').hidden = false;
     // Not the name field: a movement key still held at the moment of victory would type into it.
-    const first = upgrades ? $('upgrades').firstElementChild : score ? $('score-submit') : $('overlay-action');
+    const buyable = shop ? $('upgrades').querySelector('button:not(:disabled)') : null;
+    const first = buyable ?? (score ? $('score-submit') : $('overlay-action'));
     first.focus({ preventScroll: true, focusVisible: false });
   }
 
-  upgradeLabel(id) {
-    const { upgradeDamage, upgradeHealth, upgradeFireRate } = this.config.gameplay;
+  shopLabel(id) {
+    const g = this.config.gameplay;
     return {
-      pump: 'Change gun to pump',
-      damage: `Add ${upgradeDamage}% damage`,
-      fireRate: `Fire ${upgradeFireRate}% faster`,
-      health: `Add ${upgradeHealth} health`,
-      companion: `Add 1 more ${this.names.companion}`,
+      pump: 'Get pump gun',
+      damage: `Add ${g.upgradeDamage}% damage`,
+      fireRate: `Fire ${g.upgradeFireRate}% faster`,
       pierce: 'Bullets pass through +1 enemy',
+      health: `Add ${g.upgradeHealth} health`,
+      regen: `Replenish +${g.upgradeRegen} health per second`,
+      laser: 'Get personal laser: shoots down incoming bullets',
+      laserRate: `Laser recharges ${g.upgradeLaserRate}% faster`,
+      laserRange: `Laser reaches ${g.upgradeLaserRange} further`,
+      laserBeams: 'Laser hits +1 bullet at a time',
+      companion: `Get ${this.names.companion}`,
+      companion2: `Get ${this.names.companion2}`,
+      companionDamage: `Companions deal ${g.upgradeCompanionDamage}% more damage`,
+      companionFireRate: `Companions fire ${g.upgradeCompanionFireRate}% faster`,
+      companionHealth: `Companions get ${g.upgradeCompanionHealth}% more health`,
     }[id];
   }
 
-  showUpgrades() {
-    this.mode = 'levelup';
+  openShop() {
+    if (this.mode !== 'playing') return;
+    this.mode = 'shop';
     this.mouseAim.reset();
     this.updateHud();
-    $('upgrades').replaceChildren(...availableUpgrades(this.state).map((id, index) => {
-      const key = document.createElement('span');
-      key.className = 'upgrade-key';
-      key.textContent = String(index + 1);
-      const button = document.createElement('button');
-      button.type = 'button';
-      button.className = 'upgrade';
-      button.append(key, this.upgradeLabel(id));
-      button.addEventListener('click', () => this.chooseUpgrade(id));
-      return button;
-    }));
-    this.overlay({ heading: 'Level up', text: 'Choose one upgrade.', upgrades: true });
+    this.showShop();
   }
 
-  chooseUpgrade(id) {
+  closeShop() {
+    if (this.mode !== 'shop') return;
+    this.resume();
+  }
+
+  moveShopTab(step) {
+    const ids = shopSections(this.state).map((section) => section.id);
+    const index = ids.indexOf(this.shopTab);
+    this.shopTab = ids[(index + step + ids.length) % ids.length];
+    this.showShop();
+  }
+
+  shopTabButton({ id }) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'map-choice';
+    button.textContent = SHOP_LABELS[id];
+    button.setAttribute('aria-pressed', String(id === this.shopTab));
+    button.addEventListener('click', () => {
+      this.shopTab = id;
+      this.showShop();
+    });
+    return button;
+  }
+
+  shopItemButton(item, index, points) {
+    const key = document.createElement('span');
+    key.className = 'upgrade-key';
+    key.textContent = String(index + 1);
+    const label = document.createElement('span');
+    label.className = 'upgrade-label';
+    label.textContent = this.shopLabel(item.id);
+    const note = document.createElement('span');
+    note.className = 'upgrade-note';
+    note.textContent = SHOP_NOTES[item.state] ?? (item.bought ? `×${item.bought}` : '');
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'upgrade';
+    button.disabled = item.state !== 'ready' || points < 1;
+    button.append(key, label, note);
+    button.addEventListener('click', () => this.buyUpgrade(item.id));
+    return button;
+  }
+
+  showShop() {
+    const points = this.state.upgradePoints;
+    const sections = shopSections(this.state);
+    const section = sections.find(({ id }) => id === this.shopTab) ?? sections[0];
+    this.shopTab = section.id;
+    $('shop-tabs').replaceChildren(...sections.map((entry) => this.shopTabButton(entry)));
+    $('upgrades').replaceChildren(...section.items.map((item, index) => this.shopItemButton(item, index, points)));
+    this.overlay({
+      heading: 'Upgrade shop',
+      text: points ? `${points} upgrade${points === 1 ? '' : 's'} to spend.` : `No upgrades to spend yet. Every ${this.config.gameplay.xpToUpgrade} XP earns one.`,
+      action: 'Back to game',
+      shop: true,
+      hint: 'Number keys buy, A and D change section, B goes back.',
+    });
+  }
+
+  buyUpgrade(id) {
     if (!applyUpgrade(this.state, id)) return;
-    this.mode = 'playing';
-    this.accumulator = 0;
-    $('overlay').hidden = true;
-    document.activeElement?.blur?.();
     for (const event of this.state.events.splice(0)) this.handleEvent(event);
+    this.updateHud();
+    if (this.state.upgradePoints) this.showShop();
+    else this.closeShop();
   }
 
   showMenu() {
     const { site } = this.config;
     const { hostage, boss } = this.names;
     const ending = this.config.characters.boss.enabled ? `Defeat ${boss} to set them free.` : 'Reach them to set them free.';
-    $('controls-hint').textContent = 'Move with WASD or the arrow keys. Attacks fire on their own; hold the mouse button to aim.';
     const endless = this.gameMode === 'endless';
     const bossWarning = this.config.characters.boss.enabled ? ` Very rarely, ${boss} comes hunting too.` : '';
     this.overlay({
@@ -346,6 +421,7 @@ class Game {
       roster: true,
       picker: true,
       boardButton: true,
+      hint: 'Move with WASD or the arrow keys. Attacks fire on their own; hold the mouse button to aim. Press B for the upgrade shop.',
     });
   }
 
@@ -357,7 +433,9 @@ class Game {
     this.renderer.camera = null;
     this.renderer.particles.length = 0;
     this.renderer.rings.length = 0;
+    this.renderer.beams.length = 0;
     this.state = this.newGame();
+    this.shopTab = null;
     this.hintExplained = false;
     this.mode = 'playing';
     this.accumulator = 0;
@@ -489,7 +567,8 @@ class Game {
 
   handleEvent(event) {
     this.renderer.handleEvent(event);
-    const { companion, hostage, boss } = this.names;
+    const { hostage, boss } = this.names;
+    const companion = this.names[event.role];
     switch (event.type) {
       case 'shot':
         this.sounds.play(event.role, 'shoot', event, this.state.player);
@@ -534,8 +613,8 @@ class Game {
       case 'hostageLocked':
         this.toast(`Defeat ${boss} to free ${hostage}`);
         break;
-      case 'levelUp':
-        this.showUpgrades();
+      case 'upgradeReady':
+        this.toast(`Upgrade ready. ${isMobile() ? 'Tap Shop' : 'Press B'} to spend it.`);
         break;
       case 'win':
         this.finish(true);
@@ -578,10 +657,18 @@ class Game {
     this.setBar('xp-bar', s.xp / need);
     this.setText('xp-text', `${s.xp} / ${need}`);
     this.setText('stat-level', String(s.level));
+    const points = s.upgradePoints;
+    this.setText('stat-points', String(points));
+    this.setText('shop-count', String(points));
+    $('points-label').hidden = !points;
+    $('shop-count').hidden = !points;
+    $('shop-btn').classList.toggle('has-points', points > 0);
     const team = s.companions;
     $('companion-vital').hidden = !team.length;
     if (team.length) {
-      this.setText('companion-name', team.length > 1 ? `${this.names.companion} ×${team.length}` : this.names.companion);
+      const kinds = new Set(team.map((m) => m.role));
+      const name = kinds.size > 1 ? 'Team' : this.names[team[0].role];
+      this.setText('companion-name', team.length > 1 ? `${name} ×${team.length}` : name);
       this.setBar('companion-bar', team.reduce((sum, m) => sum + m.hp, 0) / team.reduce((sum, m) => sum + m.maxHp, 0));
     }
     const showBoss = s.boss.alive && s.boss.mode !== 'idle';
@@ -605,7 +692,7 @@ class Game {
       this.toastTimer -= dt;
       if (this.toastTimer <= 0) $('toast').hidden = true;
     }
-    this.renderer.draw(this.state, this.mode === 'paused' || this.mode === 'levelup' ? 0 : dt);
+    this.renderer.draw(this.state, this.mode === 'paused' || this.mode === 'shop' ? 0 : dt);
     this.sounds.update(this.state, this.renderer, this.mode);
     requestAnimationFrame((t) => this.frame(t));
   }
