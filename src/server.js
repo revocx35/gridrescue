@@ -1,5 +1,6 @@
 // Process entry point: reads the environment and starts the HTTP(S) listener.
 import fs from 'node:fs';
+import path from 'node:path';
 import { createApp } from './app.js';
 import { Leaderboard, RunTokens } from './leaderboard.js';
 import { createOidc } from './oidc.js';
@@ -33,10 +34,13 @@ const trustProxy = list(env.TRUST_PROXY);
 
 const dataDir = env.DATA_DIR ?? './data';
 const store = new Store(dataDir);
+const runs = new RunTokens();
+const openRunsFile = path.join(dataDir, 'open-runs.json');
+runs.load(openRunsFile);
 const app = await createApp({
   store,
   leaderboard: new Leaderboard(dataDir),
-  runs: new RunTokens(),
+  runs,
   sessions: new Sessions(),
   oidc,
   adminGroups,
@@ -52,5 +56,13 @@ await app.listen({ host: '0.0.0.0', port });
 app.server.maxConnections = 2048;
 
 for (const signal of ['SIGTERM', 'SIGINT']) {
-  process.once(signal, () => app.close().finally(() => process.exit(0)));
+  process.once(signal, () => {
+    // Before closing, which can outlast the container's stop timeout while connections drain.
+    try {
+      runs.save(openRunsFile);
+    } catch (err) {
+      app.log.error({ err: err.message }, 'could not save open runs');
+    }
+    app.close().finally(() => process.exit(0));
+  });
 }

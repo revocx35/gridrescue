@@ -25,6 +25,32 @@ export class RunTokens {
     this.runs = new Map();
   }
 
+  /**
+   * Written on shutdown and read back once on start, so that a deploy does not cost players the run
+   * they are in the middle of. Holds token hashes only.
+   */
+  save(file) {
+    this.#sweep();
+    writeAtomic(file, JSON.stringify([...this.runs]));
+  }
+
+  load(file, log = console) {
+    let stored;
+    try {
+      stored = JSON.parse(fs.readFileSync(file, 'utf8'));
+    } catch (err) {
+      if (err.code !== 'ENOENT') log.error({ err: err.message }, 'saved runs were unreadable; ignoring them');
+      fs.rmSync(file, { force: true });
+      return;
+    }
+    fs.rmSync(file);
+    if (!Array.isArray(stored)) return;
+    for (const [key, run] of stored.slice(-MAX_OPEN_RUNS)) {
+      if (Number.isFinite(run?.started) && Number.isFinite(run.limits?.minTime) && MAPS.includes(run.map)) this.runs.set(key, run);
+    }
+    this.#sweep();
+  }
+
   #sweep() {
     const oldest = this.now() - RUN_TTL_MS;
     for (const [key, run] of this.runs) { // insertion order is age order
@@ -52,13 +78,16 @@ export class RunTokens {
     return run ?? null;
   }
 
-  /** True if a run with this result could really have happened. A death ranks on kills, so needs at least one. */
-  isPlausible(run, { time, kills, won }) {
-    if (typeof won !== 'boolean' || !Number.isFinite(time) || time < 0 || !Number.isInteger(kills) || kills < 0) return false;
+  /** Why this result could not really have happened, or null if it could. A death ranks on kills, so needs one. */
+  problemWith(run, { time, kills, won }) {
+    if (typeof won !== 'boolean' || !Number.isFinite(time) || time < 0 || !Number.isInteger(kills) || kills < 0) return 'bad_values';
     const elapsed = (this.now() - run.started) / 1000;
     const { minTime, minSpawnGap } = run.limits;
-    if (won ? time < minTime : kills === 0) return false;
-    return time <= elapsed + CLOCK_GRACE_SECONDS && kills <= time / minSpawnGap + 1;
+    if (won && time < minTime) return 'too_fast';
+    if (!won && kills === 0) return 'no_kills';
+    if (time > elapsed + CLOCK_GRACE_SECONDS) return 'longer_than_real_time';
+    if (kills > time / minSpawnGap + 1) return 'too_many_kills';
+    return null;
   }
 }
 

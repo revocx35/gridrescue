@@ -69,7 +69,8 @@ are deleted on every commit. A monotonically increasing `revision` gives optimis
 The server records when each run starts (`POST /api/runs`, a one-time token stored only as a hash, in memory, 3 hour
 life). When a run ends the browser posts the token, a name, the time, the kills and whether it was a win. Deaths appear only under most
 kills and need at least one kill. The map comes from the token. Each map keeps its top 50 by shortest time and top 50 by most kills in `leaderboard.json`; the public view shows
-ten of each. A restart loses open run tokens, so a run in progress at that moment cannot be saved.
+ten of each. Open run tokens are written to `open-runs.json` on shutdown and read back once at start, so a deploy does not cost players
+their run. A crash still loses them. Every rejected score logs why, without the name or token.
 
 ## Page layout
 

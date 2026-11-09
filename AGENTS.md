@@ -95,6 +95,7 @@ docker compose up -d --build  # deploy
   keep the "score limits" test passing, or real wins get rejected.
 - The page sets `user-select: none`, and global key handlers treat WASD as movement. Any new text input needs
   `user-select: text`, a 16 px font for iOS, and the `closest('input')` guard in `Keyboard`.
+- To find out why a score was refused, look for `score rejected` in the container log; `problem` gives the reason.
 - "Restore defaults" does not touch the leaderboard; only its own admin tab does.
 - Enemy stats are per actor now (`e.size`, `e.damage`, `e.xp`), set at spawn from the current level. Draw and hit-test those,
   not `characters[kind]`. Tests that build enemies by hand must set them. Speed and size never scale.

@@ -1,6 +1,6 @@
 {
   "name": "gridrescue",
-  "version": "1.8.0",
+  "version": "1.8.1",
   "private": true,
   "description": "Endless-grid 2D rescue game whose names, sprites and page layout are editable by an admin.",
   "type": "module",

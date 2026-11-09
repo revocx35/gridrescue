@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, it } from 'node:test';
-import { Leaderboard, RUN_TTL_MS } from '../src/leaderboard.js';
+import { Leaderboard, RUN_TTL_MS, RunTokens } from '../src/leaderboard.js';
 import { cleanScoreName, defaultConfig, mapConfig } from '../public/js/schema.js';
 import { scoreLimits } from '../public/js/sim.js';
 import { ORIGIN, authed, makeApp, signIn } from './helpers.js';
@@ -115,6 +115,71 @@ describe('leaderboard', () => {
     ctx.advance(GOOD_TIME * 1000);
     assert.equal((await post({ token, name: 'Ada', time: GOOD_TIME, kills: 1, won: true })).statusCode, 200);
     assert.equal((await post({ token, name: 'Ada', time: GOOD_TIME, kills: 1, won: true })).statusCode, 403);
+  });
+
+  describe('across a restart', () => {
+    let file;
+    let clock;
+    let before;
+    const later = () => new RunTokens(() => clock);
+    const reloaded = () => {
+      const runs = later();
+      runs.load(file, { error() {} });
+      return runs;
+    };
+    beforeEach(() => {
+      file = path.join(ctx.dir, 'open-runs.json');
+      clock = 1_000_000;
+      before = later();
+    });
+
+    it('keeps a run in progress', () => {
+      const token = before.issue('forest', limits);
+      before.save(file);
+      clock += 60_000;
+      const run = reloaded().take(token);
+      assert.equal(run.map, 'forest');
+      assert.equal(run.started, 1_000_000);
+    });
+
+    it('stores only hashes of tokens', () => {
+      const token = before.issue('grid', limits);
+      before.save(file);
+      assert.equal(fs.readFileSync(file, 'utf8').includes(token), false);
+    });
+
+    it('uses the file once, so a saved run cannot be replayed after another restart', () => {
+      const token = before.issue('grid', limits);
+      before.save(file);
+      assert.ok(reloaded().take(token));
+      assert.equal(fs.existsSync(file), false);
+      assert.equal(reloaded().take(token), null);
+    });
+
+    it('does not bring back a run that already posted', () => {
+      const token = before.issue('grid', limits);
+      before.take(token);
+      before.save(file);
+      assert.equal(reloaded().take(token), null);
+    });
+
+    it('drops runs that expired while it was down', () => {
+      const token = before.issue('grid', limits);
+      before.save(file);
+      clock += RUN_TTL_MS + 1000;
+      assert.equal(reloaded().take(token), null);
+    });
+
+    it('starts cleanly with no file', () => {
+      assert.equal(reloaded().runs.size, 0);
+    });
+
+    for (const [label, content] of [['corrupt', '{nope'], ['the wrong shape', '{"a":1}'], ['bad entries', '[["k",{"map":"moon","started":1}],["j",null]]']]) {
+      it(`ignores a file that is ${label}`, () => {
+        fs.writeFileSync(file, content);
+        assert.equal(reloaded().runs.size, 0);
+      });
+    }
   });
 
   it('rejects a made-up token', async () => {
