@@ -38,7 +38,7 @@ compose.yaml, Dockerfile           Hardened deployment
 
 ```sh
 npm ci                        # install
-npm test                      # all tests (367): rules, modes, editor, PNG, audio, auth, real OIDC client against a local issuer
+npm test                      # all tests (381): rules, modes, editor, PNG, audio, auth, real OIDC client against a local issuer
 npm start                     # plain HTTP unless TLS_* is set; needs PUBLIC_URL for sign-in
 scripts/setup.sh IP:x.x.x.x   # once per checkout
 docker compose up -d --build  # deploy
@@ -125,6 +125,7 @@ docker compose up -d --build  # deploy
 - Hills stay within `HILL_MARGIN` of their chunk's edge so that neighbouring hills always leave a gap wide enough to walk through. Raising the lobe count or radius needs `HILL_REACH` and the margin raised with it.
 - `s.crewedBuses` is the only record of which buses are manned. Despawning a Rocketeer by distance removes its entry, so it comes back; killing one leaves the entry, so it does not.
 - In Endless `s.hostage` is null and `s.boss.alive` is false, so check `s.hostage` before using it. The rare Endless boss is an ordinary `s.enemies` entry with `kind: 'boss'`, so compare with `e === s.boss`, never `e.kind`, to mean the guardian.
+- The Boss attack (`attackType: 'boss'`) and the rescue boss share `bossMoves` and `bossContact`. Fix boss behaviour there, once. An enemy using it needs `bossTimers()` at spawn and only opens fire on screen; for the rescue boss it just means the pump pattern.
 - Kamikaze is not a kill: no XP and no `kills` increment unless a shot gets it first. It is not offered for the boss (`notFor` in `CHARACTER_FIELDS`).
 - Playwright's `wait_for_function` is blocked by the CSP (no `unsafe-eval`). Use selector waits in browser tests.
 - Enemy 5 cannot spawn in the first 40 seconds of a run (`ENEMY5_EARLIEST`). Spawn tests must set `s.time`.

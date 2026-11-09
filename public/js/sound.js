@@ -9,6 +9,7 @@ const MAX_VOICES = 16;
 const THEME_VOLUME = 0.7;
 const FADE = 0.08;
 const BOSS_VIEW_MARGIN = 260;
+const THEME_KEY = 'boss:theme';
 
 export class SoundBoard {
   constructor() {
@@ -95,18 +96,19 @@ export class SoundBoard {
     if (state.hostage) hear('hostage', state.hostage);
     const bossSeen = (state.boss.alive && renderer.inView(state.boss, BOSS_VIEW_MARGIN))
       || state.enemies.some((e) => e.kind === 'boss' && renderer.inView(e, BOSS_VIEW_MARGIN));
-    if (bossSeen && this.buffers.boss?.theme) wanted.set('boss:theme', THEME_VOLUME);
+    if (bossSeen && this.buffers.boss?.theme) wanted.set(THEME_KEY, THEME_VOLUME);
     return wanted;
   }
 
-  /** Call once per frame. When the game is not running, all looping sounds stop. */
-  update(state, renderer, running) {
+  /** Call once per frame with the game's mode. Choosing an upgrade keeps the theme going; any other stop silences every loop. */
+  update(state, renderer, mode) {
     if (!this.context) return;
-    if (!running) {
+    if (mode !== 'playing' && mode !== 'levelup') {
       this.#stopLoops();
       return;
     }
     const wanted = this.#wantedLoops(state, renderer);
+    if (mode === 'levelup') for (const key of wanted.keys()) if (key !== THEME_KEY) wanted.delete(key);
     for (const key of this.loops.keys()) if (!wanted.has(key)) this.#stopLoop(key);
     for (const [key, volume] of wanted) this.#setLoop(key, volume);
   }

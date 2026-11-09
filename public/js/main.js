@@ -587,7 +587,7 @@ class Game {
       if (this.toastTimer <= 0) $('toast').hidden = true;
     }
     this.renderer.draw(this.state, this.mode === 'paused' || this.mode === 'levelup' ? 0 : dt);
-    this.sounds.update(this.state, this.renderer, this.mode === 'playing');
+    this.sounds.update(this.state, this.renderer, this.mode);
     requestAnimationFrame((t) => this.frame(t));
   }
 }

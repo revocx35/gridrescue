@@ -54,7 +54,7 @@ are deleted on every commit. A monotonically increasing `revision` gives optimis
   width, so the true direction is always inside it, but never reliably in the middle.
 - The companion spawns at `companionKills` kills or within `companionDistance` of the hostage, whichever is first, so
   it always arrives before the player does. When downed it returns after 9 seconds.
-- Each enemy role has an `attackType`. Melee hits on contact. Kamikaze runs at its target and dies on contact, dealing its damage once, with no kill or XP unless a shot gets it first. It is not offered for the boss. Sniper stops at long range, shows an aim line, locks its
+- Each enemy role has an `attackType`. Melee hits on contact. Kamikaze runs at its target and dies on contact, dealing its damage once, with no kill or XP unless a shot gets it first. It is not offered for the boss. The Boss attack makes an enemy fight the way the rescue boss does: a fan of bullets, a ring, a telegraphed charge, harder contact damage and faster attacks under half health, from shared code. It only opens fire on screen. Set on the boss it makes the Endless boss fight like the rescue boss, and changes nothing in Rescue. Sniper stops at long range, shows an aim line, locks its
   direction and fires one fast bullet. Pump closes in and fires a five-pellet spread. Ranged enemies only fire from inside
   the player's view and do no contact damage.
 - The boss's attack type replaces its primary attack: pump is the fan plus the ring, sniper is single fast bullets, and
@@ -81,7 +81,7 @@ Endless runs rank separately, by most kills and longest run, and share the map's
 
 ## Sound
 
-There are no built-in sounds. Each map's characters have upload slots (`SOUND_SLOTS`), and an empty slot is silent. The simulation emits `shot` and `kamikaze` events naming the role. `sound.js` turns these into one-shots that fade with distance, and each frame loops the idle sound of every role with an actor nearby and the boss theme while a boss is on screen. Audio needs a user gesture, so the context starts on the first press.
+There are no built-in sounds. Each map's characters have upload slots (`SOUND_SLOTS`), and an empty slot is silent. The simulation emits `shot` and `kamikaze` events naming the role. `sound.js` turns these into one-shots that fade with distance, and each frame loops the idle sound of every role with an actor nearby and the boss theme while a boss is on screen. The theme keeps playing through the upgrade menu; idle sounds stop there, and pausing or the end of a run stops everything. Audio needs a user gesture, so the context starts on the first press.
 
 Slots: player shoot; companion idle and shoot; hostage idle; enemies, Su-34 and Rocketeer idle and shoot (a melee hit counts as the shoot sound); enemy 1 and 2 also have the kamikaze impact; boss theme only.
 

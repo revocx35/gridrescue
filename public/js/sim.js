@@ -76,6 +76,9 @@ function createWorld(cfg, rng, hostage, arena) {
   return cfg.mapId === 'forest' ? createForest(seed, clearings) : createWasteland(seed, clearings, cfg.characters.rocketeer.spawnChance);
 }
 
+const BOSS_CONTACT_FACTOR = 1.6;
+const bossTimers = () => ({ fanT: 1.2, ringT: 3.4, chargeT: 5, windup: 0, dash: 0, dashX: 0, dashY: 0 });
+
 /** view is the half-size of the visible world, kept current by the renderer. mode is 'rescue' or 'endless'. */
 export function createGame(cfg, { rng = Math.random, view = { halfW: 500, halfH: 350 }, mode = 'rescue' } = {}) {
   const c = cfg.characters;
@@ -88,7 +91,7 @@ export function createGame(cfg, { rng = Math.random, view = { halfW: 500, halfH:
   const boss = {
     ...actor(hostage?.x ?? 0, (hostage?.y ?? 0) - arena * 0.4, c.boss),
     kind: 'boss', size: c.boss.size, mode: 'idle', alive: !endless && c.boss.enabled,
-    fanT: 1.2, ringT: 3.4, chargeT: 5, windup: 0, dash: 0, dashX: 0, dashY: 0,
+    ...bossTimers(),
   };
   const world = createWorld(cfg, rng, hostage, arena);
   return {
@@ -285,6 +288,7 @@ function spawnEnemy(s) {
   const ch = cfg.characters[kind];
   e.speed = ch.speed * (0.92 + rng() * 0.16);
   e.attack = kind === 'enemy5' ? 'ball' : ch.attackType;
+  if (e.attack === 'boss') Object.assign(e, bossTimers());
   if (kind === 'enemy5') {
     e.ballT = ch.fireInterval;
     emit(s, 'enemy5');
@@ -567,6 +571,31 @@ function updateBallAttack(s, e, target, dt) {
   e.windup = 0;
 }
 
+/** The sideways push along one axis that keeps enemies from stacking on one spot. */
+function spreadFromOthers(s, e, axis) {
+  let push = 0;
+  for (const other of s.enemies) {
+    if (other === e || other.kind === 'jet' || other.kind === 'rocketeer') continue; // in the air, or up on a bus
+    const od = Math.hypot(e.x - other.x, e.y - other.y);
+    if (od > 0 && od < e.r + other.r) push += ((e[axis] - other[axis]) / od) * 110;
+  }
+  return push;
+}
+
+/** A regular enemy using the Boss attack: it fights like the guardian, but only opens fire where the player can see it. */
+function updateBossAttacker(s, e, dt) {
+  const d = dist(e, s.player) || 1;
+  bossMoves(s, e, { speed: e.speed, damage: e.damage, attack: 'pump' }, onScreen(s, e), dt);
+  e.vx += spreadFromOthers(s, e, 'x');
+  e.vy += spreadFromOthers(s, e, 'y');
+  e.x += e.vx * dt;
+  e.y += e.vy * dt;
+  pushOutOfSolids(s.world, e, dt);
+  if (Math.abs(e.vx) > 5) e.face = Math.sign(e.vx);
+  e.flash = Math.max(0, e.flash - dt);
+  bossContact(s, e, e.damage * BOSS_CONTACT_FACTOR, d, dt);
+}
+
 function updateEnemies(s, dt) {
   for (let i = s.enemies.length - 1; i >= 0; i--) {
     const e = s.enemies[i];
@@ -584,23 +613,16 @@ function updateEnemies(s, dt) {
       if (e.life <= 0) s.enemies.splice(i, 1);
       continue;
     }
+    if (e.attack === 'boss') {
+      updateBossAttacker(s, e, dt);
+      continue;
+    }
     const target = chaseTarget(s, e);
     const d = dist(e, target) || 1;
     const spec = RANGED[e.attack];
     const pace = spec ? rangedPace(s, e, spec, d) : 1;
-    let vx = ((target.x - e.x) / d) * e.speed * pace;
-    let vy = ((target.y - e.y) / d) * e.speed * pace;
-    for (const other of s.enemies) {
-      if (other === e || other.kind === 'jet' || other.kind === 'rocketeer') continue; // in the air, or up on a bus
-      const ox = e.x - other.x;
-      const oy = e.y - other.y;
-      const od = Math.hypot(ox, oy);
-      const min = e.r + other.r;
-      if (od > 0 && od < min) {
-        vx += (ox / od) * 110;
-        vy += (oy / od) * 110;
-      }
-    }
+    const vx = ((target.x - e.x) / d) * e.speed * pace + spreadFromOthers(s, e, 'x');
+    const vy = ((target.y - e.y) / d) * e.speed * pace + spreadFromOthers(s, e, 'y');
     e.vx = vx;
     e.vy = vy;
     e.x += vx * dt;
@@ -634,13 +656,83 @@ function hitTarget(s, target, damage) {
   else hurtCompanion(s, target, damage);
 }
 
-function fireBossBullet(s, angle, speed = BOSS_BULLET_SPEED) {
-  const b = s.boss;
+function fireBossBullet(s, b, damage, angle, speed = BOSS_BULLET_SPEED) {
   s.bullets.push({
     x: b.x, y: b.y,
     vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed,
-    ttl: 3.2, r: 9, damage: s.cfg.characters.boss.damage * enemyFactor(s),
+    ttl: 3.2, r: 9, damage,
   });
+}
+
+/**
+ * The boss's way of fighting, for the guardian and for anything using the Boss attack: walks at the player,
+ * fires by `attack`, charges now and then, and speeds up when badly hurt. Sets the velocity; the caller moves.
+ */
+function bossMoves(s, b, { speed, damage, attack }, canAttack, dt) {
+  const enraged = b.hp < b.maxHp * 0.5;
+  const pace = enraged ? 1.45 : 1;
+  const d = dist(b, s.player) || 1;
+  const toPlayer = Math.atan2(s.player.y - b.y, s.player.x - b.x);
+  const shout = () => emit(s, 'shot', { role: b.kind, x: b.x, y: b.y });
+
+  if (b.windup > 0) {
+    b.windup -= dt;
+    b.vx = 0;
+    b.vy = 0;
+    if (b.windup <= 0) {
+      b.dash = 0.55;
+      b.dashX = Math.cos(toPlayer);
+      b.dashY = Math.sin(toPlayer);
+    }
+    return;
+  }
+  if (b.dash > 0) {
+    b.dash -= dt;
+    b.vx = b.dashX * speed * 4.6;
+    b.vy = b.dashY * speed * 4.6;
+    return;
+  }
+  b.vx = ((s.player.x - b.x) / d) * speed;
+  b.vy = ((s.player.y - b.y) / d) * speed;
+  if (!canAttack) return;
+  b.fanT -= dt * pace;
+  b.ringT -= dt * pace;
+  b.chargeT -= dt * pace;
+  if (attack === 'sniper' && b.fanT <= 0) {
+    b.fanT = 0.85;
+    shout();
+    fireBossBullet(s, b, damage, toPlayer, BOSS_BULLET_SPEED * 2.1);
+  }
+  if (attack === 'pump' && b.fanT <= 0) {
+    b.fanT = 1.5;
+    shout();
+    const count = enraged ? 7 : 5;
+    for (let i = 0; i < count; i++) fireBossBullet(s, b, damage, toPlayer + (i - (count - 1) / 2) * 0.2);
+  }
+  if (attack === 'pump' && b.ringT <= 0) {
+    b.ringT = 4.2;
+    shout();
+    const start = s.rng() * TAU;
+    for (let i = 0; i < 16; i++) fireBossBullet(s, b, damage, start + (i / 16) * TAU, BOSS_BULLET_SPEED * 0.8);
+  }
+  if (b.chargeT <= 0) {
+    b.chargeT = attack === 'melee' ? 3.2 : 5.5;
+    b.windup = 0.7;
+    emit(s, 'bossCharge');
+  }
+}
+
+function bossContact(s, b, damage, d, dt) {
+  b.cool -= dt;
+  if (b.cool <= 0 && d < b.r + s.player.r) {
+    b.cool = 0.75;
+    hurtPlayer(s, damage);
+  }
+  for (const m of s.companions) {
+    if (m.down || b.cool > 0 || dist(b, m) >= b.r + m.r) continue;
+    b.cool = 0.75;
+    hurtCompanion(s, m, damage);
+  }
 }
 
 function updateBoss(s, dt) {
@@ -678,51 +770,11 @@ function updateBoss(s, dt) {
     return;
   }
 
-  const enraged = b.hp < b.maxHp * 0.5;
-  const pace = enraged ? 1.45 : 1;
   const d = dist(b, s.player) || 1;
-  const toPlayer = Math.atan2(s.player.y - b.y, s.player.x - b.x);
-
-  if (b.windup > 0) {
-    b.windup -= dt;
-    b.vx = 0;
-    b.vy = 0;
-    if (b.windup <= 0) {
-      b.dash = 0.55;
-      b.dashX = Math.cos(toPlayer);
-      b.dashY = Math.sin(toPlayer);
-    }
-  } else if (b.dash > 0) {
-    b.dash -= dt;
-    b.vx = b.dashX * ch.speed * 4.6;
-    b.vy = b.dashY * ch.speed * 4.6;
-  } else {
-    b.vx = ((s.player.x - b.x) / d) * ch.speed;
-    b.vy = ((s.player.y - b.y) / d) * ch.speed;
-    b.fanT -= dt * pace;
-    b.ringT -= dt * pace;
-    b.chargeT -= dt * pace;
-    const attack = ch.attackType;
-    if (attack === 'sniper' && b.fanT <= 0) {
-      b.fanT = 0.85;
-      fireBossBullet(s, toPlayer, BOSS_BULLET_SPEED * 2.1);
-    }
-    if (attack === 'pump' && b.fanT <= 0) {
-      b.fanT = 1.5;
-      const count = enraged ? 7 : 5;
-      for (let i = 0; i < count; i++) fireBossBullet(s, toPlayer + (i - (count - 1) / 2) * 0.2);
-    }
-    if (attack === 'pump' && b.ringT <= 0) {
-      b.ringT = 4.2;
-      const start = s.rng() * TAU;
-      for (let i = 0; i < 16; i++) fireBossBullet(s, start + (i / 16) * TAU, BOSS_BULLET_SPEED * 0.8);
-    }
-    if (b.chargeT <= 0) {
-      b.chargeT = attack === 'melee' ? 3.2 : 5.5;
-      b.windup = 0.7;
-      emit(s, 'bossCharge');
-    }
-  }
+  const damage = ch.damage * enemyFactor(s);
+  // For the guardian the Boss attack is simply its usual fan, ring and charge.
+  const attack = ch.attackType === 'boss' ? 'pump' : ch.attackType;
+  bossMoves(s, b, { speed: ch.speed, damage, attack }, true, dt);
 
   b.x += b.vx * dt;
   b.y += b.vy * dt;
@@ -734,17 +786,7 @@ function updateBoss(s, dt) {
     b.dash = 0;
   }
   if (Math.abs(b.vx) > 5) b.face = Math.sign(b.vx);
-
-  b.cool -= dt;
-  if (b.cool <= 0 && d < b.r + s.player.r) {
-    b.cool = 0.75;
-    hurtPlayer(s, ch.damage * enemyFactor(s) * 1.6);
-  }
-  for (const m of s.companions) {
-    if (m.down || b.cool > 0 || dist(b, m) >= b.r + m.r) continue;
-    b.cool = 0.75;
-    hurtCompanion(s, m, ch.damage * enemyFactor(s) * 1.6);
-  }
+  bossContact(s, b, damage * BOSS_CONTACT_FACTOR, d, dt);
 }
 
 function updateShots(s, dt) {

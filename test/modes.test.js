@@ -556,6 +556,167 @@ describe('endless mode', () => {
   });
 });
 
+describe('boss attack', () => {
+  const fighter = (edit) => {
+    const cfg = mapConfig(defaultConfig(), 'grid');
+    Object.assign(cfg.characters.enemy2, { attackType: 'boss', speed: 100, hp: 5000, damage: 10 });
+    cfg.characters.enemy1.spawnChance = 0;
+    cfg.characters.enemy5.spawnChance = 0;
+    cfg.characters.jet.enabled = false;
+    edit?.(cfg);
+    const s = createGame(cfg, { rng: seeded(3) });
+    s.player.hp = s.player.maxHp = 1e9;
+    s.player.cool = 1e12;
+    s.spawnT = 0;
+    step(s, DT, still);
+    s.spawnT = 1e9;
+    const e = s.enemies[0];
+    e.x = 200;
+    e.y = 0;
+    s.bullets.length = 0;
+    return { s, e };
+  };
+
+  it('is offered to enemies and the boss, and validated', () => {
+    const config = defaultConfig();
+    for (const map of Object.values(config.maps)) for (const ch of Object.values(map.characters)) { delete ch.sprite; delete ch.sounds; }
+    config.maps.grid.characters.enemy1.attackType = 'boss';
+    config.maps.grid.characters.boss.attackType = 'boss';
+    assert.equal(validateConfig(config).ok, true);
+  });
+
+  it('fires a fan of five, then a ring of sixteen', () => {
+    const { s, e } = fighter();
+    const keepAway = () => { s.player.x = e.x - 300; s.player.y = e.y; };
+    let most = 0;
+    let fan = false;
+    for (let i = 0; i < 60 * 1.3; i++) {
+      keepAway();
+      step(s, DT, still);
+      fan = fan || s.bullets.length === 5;
+    }
+    assert.ok(fan, 'no fan');
+    s.bullets.length = 0;
+    for (let i = 0; i < 60 * 3; i++) {
+      keepAway();
+      step(s, DT, still);
+      most = Math.max(most, s.bullets.length);
+    }
+    assert.ok(most >= 16, `at most ${most} bullets`);
+  });
+
+  it('winds up and charges at several times its speed', () => {
+    const { s, e } = fighter();
+    let top = 0;
+    let wound = false;
+    for (let i = 0; i < 60 * 6.5; i++) {
+      step(s, DT, still);
+      wound = wound || e.windup > 0;
+      top = Math.max(top, Math.hypot(e.vx, e.vy));
+      s.bullets.length = 0;
+      s.player.x = e.x - 400;
+      s.player.y = e.y;
+    }
+    assert.ok(wound);
+    assert.ok(top > e.speed * 4, `top speed ${top}`);
+  });
+
+  it('speeds up its attacks when badly hurt', () => {
+    const shots = (health) => {
+      const { s, e } = fighter();
+      e.hp = e.maxHp * health;
+      let volleys = 0;
+      for (let i = 0; i < 60 * 12; i++) {
+        s.events.length = 0;
+        step(s, DT, still);
+        volleys += s.events.filter((event) => event.type === 'shot' && event.role === 'enemy2').length;
+        s.bullets.length = 0;
+        s.player.x = e.x - 300;
+        s.player.y = e.y;
+      }
+      return volleys;
+    };
+    assert.ok(shots(0.3) > shots(1));
+  });
+
+  it('hits harder on contact than its bullets', () => {
+    const { s, e } = fighter();
+    s.grace = 0;
+    e.x = 10;
+    const before = s.player.hp;
+    step(s, DT, still);
+    assert.equal(before - s.player.hp, e.damage * 1.6);
+  });
+
+  it('holds its fire off screen', () => {
+    const { s, e } = fighter();
+    for (let i = 0; i < 60 * 3; i++) {
+      e.x = 5000;
+      e.y = 0;
+      step(s, DT, still);
+    }
+    assert.equal(s.bullets.length, 0);
+  });
+
+  it('can be killed like any enemy and gives its XP', () => {
+    const { s, e } = fighter();
+    e.hp = 1;
+    s.shots.push({ x: e.x, y: e.y, vx: 0, vy: 0, ttl: 1, damage: 50, ally: false, pierce: 0 });
+    step(s, DT, still);
+    assert.equal(s.kills, 1);
+    assert.equal(s.enemies.includes(e), false);
+    assert.equal(s.status, 'playing');
+  });
+
+  it('stops at hills instead of walking through them', () => {
+    const cfg = mapConfig(defaultConfig(), 'wasteland');
+    const s = createGame(cfg, { rng: seeded(3) });
+    let lobe = null;
+    forEachItemIn(s.world, -6000, -6000, 6000, 6000, (item) => { if (item.kind === 'hill') lobe ??= item.lobes[0]; });
+    s.player.x = lobe.x + lobe.r + 80;
+    s.player.y = lobe.y;
+    s.player.cool = 1e12;
+    s.player.hp = s.player.maxHp = 1e9;
+    s.spawnT = 1e9;
+    const e = { x: lobe.x - lobe.r - 30, y: lobe.y, vx: 0, vy: 0, hp: 5000, maxHp: 5000, r: 15, cool: 0, flash: 0, face: 1, kind: 'enemy2', size: 36, xp: 10, speed: 200, damage: 1, attack: 'boss', fanT: 99, ringT: 99, chargeT: 99, windup: 0, dash: 0, dashX: 0, dashY: 0 };
+    s.enemies.push(e);
+    for (let i = 0; i < 30; i++) {
+      step(s, DT, still);
+      assert.ok(Math.hypot(e.x - lobe.x, e.y - lobe.y) >= lobe.r, 'inside the hill');
+    }
+  });
+
+  it('makes the Endless boss fight like the guardian', () => {
+    const cfg = mapConfig(defaultConfig(), 'grid');
+    cfg.characters.boss.attackType = 'boss';
+    cfg.characters.jet.enabled = false;
+    const s = createGame(cfg, { rng: () => 0.001, mode: 'endless' });
+    s.time = 61;
+    s.spawnT = 0;
+    step(s, DT, still);
+    const boss = s.enemies.find((e) => e.kind === 'boss');
+    assert.equal(boss.attack, 'boss');
+    assert.equal(boss.fanT > 0, true);
+    assert.equal(s.boss.alive, false);
+  });
+
+  it('leaves the rescue boss the same whether set to Boss attack or Pump', () => {
+    const run = (attackType) => {
+      const cfg = mapConfig(defaultConfig(), 'grid');
+      cfg.characters.boss.attackType = attackType;
+      const s = createGame(cfg, { rng: seeded(9) });
+      s.spawnT = 1e9;
+      s.player.x = s.boss.x;
+      s.player.y = s.boss.y + 300;
+      s.player.hp = s.player.maxHp = 1e9;
+      s.player.cool = 1e12;
+      for (let i = 0; i < 60 * 9; i++) step(s, DT, still);
+      return { x: s.boss.x, y: s.boss.y, bullets: s.bullets.length };
+    };
+    assert.deepEqual(run('boss'), run('pump'));
+  });
+});
+
 describe('kamikaze', () => {
   const bomber = (s, x, y = 0) => {
     const e = { x, y, vx: 0, vy: 0, hp: 40, maxHp: 40, r: 15, cool: 0, flash: 0, face: 1, kind: 'enemy2', size: 36, xp: 10, speed: 200, damage: 25, attack: 'kamikaze' };

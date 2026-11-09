@@ -900,11 +900,29 @@ export class Renderer {
     ctx.restore();
   }
 
+  #drawChargeLine(ctx, s, a) {
+    const angle = Math.atan2(s.player.y - a.y, s.player.x - a.x);
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255,77,94,0.7)';
+    ctx.lineWidth = a.r * 1.3;
+    ctx.lineCap = 'round';
+    ctx.globalAlpha = 0.28;
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y);
+    ctx.lineTo(a.x + Math.cos(angle) * 560, a.y + Math.sin(angle) * 560);
+    ctx.stroke();
+    ctx.restore();
+  }
+
   #drawAimLines(ctx, s) {
     ctx.save();
     ctx.lineCap = 'round';
     for (const e of s.enemies) {
       if (!(e.windup > 0) || !this.#visible(e)) continue;
+      if (e.attack === 'boss') {
+        this.#drawChargeLine(ctx, s, e);
+        continue;
+      }
       const { ball } = this.config.characters;
       const reach = { sniper: 800, pump: 300, ball: ball.speed * 3 }[e.attack];
       ctx.strokeStyle = e.attack === 'ball' ? 'rgba(255,77,94,0.22)' : 'rgba(255,77,94,0.65)';
@@ -991,19 +1009,7 @@ export class Renderer {
       else this.#drawActor(ctx, e.kind, e, e.size, e.kind === 'rocketeer' ? 0 : walk);
     }
     if (s.boss.alive && this.#visible(s.boss, 260)) {
-      if (s.boss.windup > 0) {
-        const a = Math.atan2(s.player.y - s.boss.y, s.player.x - s.boss.x);
-        ctx.save();
-        ctx.strokeStyle = 'rgba(255,77,94,0.7)';
-        ctx.lineWidth = s.boss.r * 1.3;
-        ctx.lineCap = 'round';
-        ctx.globalAlpha = 0.28;
-        ctx.beginPath();
-        ctx.moveTo(s.boss.x, s.boss.y);
-        ctx.lineTo(s.boss.x + Math.cos(a) * 560, s.boss.y + Math.sin(a) * 560);
-        ctx.stroke();
-        ctx.restore();
-      }
+      if (s.boss.windup > 0) this.#drawChargeLine(ctx, s, s.boss);
       this.#drawActor(ctx, 'boss', s.boss, s.boss.size);
     }
     for (const m of s.companions) {

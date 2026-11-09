@@ -14,7 +14,7 @@ Nobody needs an account to play. An admin signs in through [Authentik](https://g
 - which characters appear on each map: everything but the player and hostage can be switched off
 - the site menu: game title, tagline, button and end-screen text, colours, page order for desktop and mobile,
   joystick size and which side the movement stick is on
-- each enemy's attack type: melee, sniper (one bullet), pump (spread) or kamikaze (slams into you and dies)
+- each enemy's attack type: melee, sniper (one bullet), pump (spread), kamikaze (slams into you and dies) or boss attack (fan, ring and charge, like the boss in Rescue)
 - XP dropped by each enemy, XP needed per upgrade, the size of the damage, fire rate and health upgrades
 - how many kills raise the difficulty level and how much each level strengthens enemies
 - the leaderboard: delete single scores or clear a map

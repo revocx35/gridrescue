@@ -91,8 +91,11 @@ export const CHARACTER_FIELDS = {
   endlessXp: { label: 'XP dropped (Endless mode)', min: 0, max: 100000, step: 1 },
   attackType: {
     label: 'Attack type',
-    options: ['melee', 'sniper', 'pump', 'kamikaze'],
-    optionLabels: { melee: 'Melee', sniper: 'Sniper (one bullet)', pump: 'Pump (spread)', kamikaze: 'Kamikaze (dies slamming into you)' },
+    options: ['melee', 'sniper', 'pump', 'kamikaze', 'boss'],
+    optionLabels: {
+      melee: 'Melee', sniper: 'Sniper (one bullet)', pump: 'Pump (spread)', kamikaze: 'Kamikaze (dies slamming into you)',
+      boss: 'Boss attack (fan, ring and charge)',
+    },
     notFor: { boss: ['kamikaze'] }, // the rescue is won by killing the boss, so it cannot blow itself up
   },
 };
