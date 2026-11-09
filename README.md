@@ -63,6 +63,7 @@ You need Docker with Compose and an Authentik instance.
 Names, images and settings live in the `data` volume and survive upgrades. Any image the admin's browser can open
 (JPG, PNG, WebP, GIF, SVG and others) can be used as a sprite; it is converted to a PNG of at most 1024 px on upload.
 Sounds work the same way: MP3 is uploaded as it is, and anything else the browser can open is converted to WAV.
+On a computer, images and sounds can also be dragged from a file manager straight onto their character or sound row.
 
 ### Reverse proxy
 

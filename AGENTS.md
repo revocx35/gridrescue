@@ -95,6 +95,8 @@ docker compose up -d --build  # deploy
 - The sprite file input has no `accept` filter on purpose: phones would open the photo picker instead of their file
   browser, and some Android file providers report no MIME type. Whether a file is an image is decided by trying to
   decode it in the browser (`image-convert.js`).
+- Sprites and sounds can also be dropped on their card or row (`acceptDrops` in `admin.js`). Drops call the same upload functions as the buttons, so there is
+  no second path to secure. Phones have no file drag, so the buttons must stay.
 - Any image format is converted to PNG in the admin's browser, so formats depend on that browser (HEIC opens in Safari,
   usually not in Chrome). Do not add server-side image decoders for this: the server accepting only sanitised PNG is a
   security property.

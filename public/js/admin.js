@@ -151,6 +151,27 @@ function spriteCanvas(role) {
   return canvas;
 }
 
+/** Lets files be dropped on a node. Drops go through the same upload path as the file button. */
+function acceptDrops(node, onFile) {
+  const carriesFiles = (e) => [...e.dataTransfer.types].includes('Files');
+  const highlight = (on) => node.classList.toggle('drop-active', on);
+  for (const type of ['dragenter', 'dragover']) {
+    node.addEventListener(type, (e) => {
+      if (!carriesFiles(e)) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'copy';
+      highlight(true);
+    });
+  }
+  node.addEventListener('dragleave', (e) => { if (!node.contains(e.relatedTarget)) highlight(false); });
+  node.addEventListener('drop', (e) => {
+    if (!carriesFiles(e)) return;
+    e.preventDefault();
+    highlight(false);
+    if (e.dataTransfer.files[0]) onFile(e.dataTransfer.files[0]);
+  });
+}
+
 async function uploadSprite(mapId, role, file) {
   setStatus(`Preparing ${file.name}…`);
   try {
@@ -231,6 +252,7 @@ function soundRow(mapId, role, slot) {
     el('button', { class: 'btn', type: 'button', textContent: 'Upload', on: { click: () => input.click() } }),
     input,
   );
+  acceptDrops(row, (dropped) => uploadSound(mapId, role, slot, dropped));
   if (file) {
     row.append(
       el('button', { class: 'btn', type: 'button', textContent: 'Play', on: { click: () => previewSound(file) } }),
@@ -243,7 +265,7 @@ function soundRow(mapId, role, slot) {
 function soundSection(mapId, role) {
   const slots = SOUND_SLOTS[role];
   if (!slots) return [];
-  return [el('div', { class: 'sound-list' }, el('span', { class: 'micro', textContent: 'Sound effects' }), ...slots.map((slot) => soundRow(mapId, role, slot)))];
+  return [el('div', { class: 'sound-list' }, el('span', { class: 'micro', textContent: 'Sound effects' }, el('span', { class: 'drop-hint', textContent: ' · or drop a file on a row' })), ...slots.map((slot) => soundRow(mapId, role, slot)))];
 }
 
 function characterCard(role) {
@@ -261,8 +283,10 @@ function characterCard(role) {
     spriteCanvas(role),
     el('span', { class: 'micro sprite-state', textContent: hasImage ? 'Your image' : 'Default art' }),
     el('button', { class: 'btn', type: 'button', textContent: 'Upload file', on: { click: () => fileInput.click() } }),
+    el('span', { class: 'micro drop-hint', textContent: 'or drop a file here' }),
     fileInput,
   );
+  acceptDrops(side, (dropped) => uploadSprite(mapId, role, dropped));
   if (hasImage) {
     side.append(el('button', { class: 'btn', type: 'button', textContent: 'Remove', on: { click: () => removeSprite(mapId, role) } }));
   }
@@ -583,6 +607,8 @@ async function main() {
   $('logout').addEventListener('click', logout);
   for (const tab of document.querySelectorAll('.tab')) tab.addEventListener('click', () => selectTab(tab.dataset.tab));
   addEventListener('beforeunload', (e) => { if (dirty) e.preventDefault(); });
+  // A file dropped beside a target would otherwise replace this page and lose unsaved changes.
+  for (const type of ['dragover', 'drop']) addEventListener(type, (e) => e.preventDefault());
   selectTab('characters');
   const data = await response.json();
   document.title = `${data.config.site.title} admin`;
