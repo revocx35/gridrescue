@@ -16,8 +16,6 @@ const ORB_MAGNET = 150;
 const ORB_PICKUP = 26;
 const ORB_SPEED = 560;
 const MAX_COMPANIONS = 6;
-const ENEMY5_EARLIEST = 40; // seconds into a run, so nobody meets the strongest enemy with a starting gun
-const JET_EARLIEST = 60;
 const MISSILE_TTL = 8;
 const MISSILE_TURN_RATE = 2.4; // radians per second: fast enough to chase, slow enough to sidestep
 const JET_MAX_LIFE = 30;
@@ -295,12 +293,13 @@ function spawnEnemy(s) {
   if (kind === 'boss') emit(s, 'bossSpawn');
 }
 
-/** Whether this character may appear right now. The boss has no limits: in Endless its rate alone decides. */
+const countOf = (s, kind) => s.enemies.filter((e) => e.kind === kind).length;
+
+/** Whether this character's own limits allow one more right now. The Rescue boss is the guardian, never a spawn. */
 function canSpawn(s, kind) {
-  if (kind === 'boss') return s.mode === 'endless';
-  if (kind === 'enemy5') return s.time >= ENEMY5_EARLIEST;
-  if (kind === 'jet') return s.time >= JET_EARLIEST && !s.enemies.some((e) => e.kind === 'jet');
-  return true;
+  const { firstSpawn, maxAlive } = s.cfg.characters[kind];
+  if (kind === 'boss' && s.mode !== 'endless') return false;
+  return s.time >= firstSpawn && (!maxAlive || countOf(s, kind) < maxAlive);
 }
 
 /** Every spawn picks one character in proportion to the rates, so 0.30 appears twice as often as 0.15. */
@@ -353,12 +352,15 @@ function launchMissile(s, jet) {
 
 /** Puts a Rocketeer on every bus coming into view. A killed crew stays in crewedBuses, so it never returns. */
 function updateBusCrews(s) {
-  if (s.world?.kind !== 'wasteland' || !s.cfg.characters.rocketeer.enabled) return;
+  const ch = s.cfg.characters.rocketeer;
+  if (s.world?.kind !== 'wasteland' || !ch.enabled || s.time < ch.firstSpawn) return;
+  let crews = countOf(s, 'rocketeer');
   const { player: p, view } = s;
   const w = view.halfW + BUS_SCAN_MARGIN;
   const h = view.halfH + BUS_SCAN_MARGIN;
   forEachItemIn(s.world, p.x - w, p.y - h, p.x + w, p.y + h, (item) => {
-    if (item.kind !== 'bus' || s.crewedBuses.has(item.id)) return;
+    if (item.kind !== 'bus' || s.crewedBuses.has(item.id) || (ch.maxAlive && crews >= ch.maxAlive)) return;
+    crews += 1;
     s.crewedBuses.add(item.id);
     const e = addEnemy(s, 'rocketeer', item.x, item.y);
     e.busId = item.id;

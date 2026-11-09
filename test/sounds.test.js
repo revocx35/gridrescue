@@ -268,6 +268,16 @@ describe('sound uploads', () => {
     assert.equal('busChance' in config.maps.wasteland.spawns, false);
   });
 
+  it('gives characters saved before these settings today\'s limits', () => {
+    const stored = ctx.store.snapshot();
+    for (const map of Object.values(stored.config.maps)) for (const ch of Object.values(map.characters)) { delete ch.firstSpawn; delete ch.maxAlive; }
+    const config = reload(stored);
+    assert.equal(config.maps.forest.characters.enemy5.firstSpawn, 40);
+    assert.equal(config.maps.forest.characters.jet.firstSpawn, 60);
+    assert.equal(config.maps.forest.characters.jet.maxAlive, 1);
+    assert.equal(config.maps.wasteland.characters.rocketeer.maxAlive, 0);
+  });
+
   it('never gives Enemy 2 a negative chance when the old ones added up to more than 1', () => {
     const stored = ctx.store.snapshot();
     withoutChances(stored);

@@ -333,6 +333,142 @@ describe('wasteland obstacles', () => {
   });
 });
 
+describe('first spawn and most at once', () => {
+  const run = (edit, seconds, map = 'grid', mode = 'endless') => {
+    const cfg = mapConfig(defaultConfig(), map);
+    Object.assign(cfg.gameplay, { spawnInterval: 0.1, maxEnemies: 1e6 });
+    cfg.characters.jet.enabled = false;
+    edit(cfg.characters);
+    const s = createGame(cfg, { rng: seeded(13), mode });
+    s.player.hp = s.player.maxHp = 1e15;
+    s.player.cool = 1e12;
+    const firstSeen = {};
+    let most = {};
+    for (let i = 0; i < 60 * seconds; i++) {
+      step(s, DT, still);
+      s.player.hp = s.player.maxHp;
+      s.bullets.length = 0;
+      s.missiles.length = 0;
+      const now = {};
+      for (const e of s.enemies) {
+        now[e.kind] = (now[e.kind] ?? 0) + 1;
+        firstSeen[e.kind] ??= s.time;
+      }
+      for (const [kind, n] of Object.entries(now)) most[kind] = Math.max(most[kind] ?? 0, n);
+    }
+    return { firstSeen, most };
+  };
+
+  it('keeps today\'s limits as the defaults', () => {
+    const { characters: c } = defaultConfig().maps.grid;
+    assert.equal(c.enemy5.firstSpawn, 40);
+    assert.equal(c.jet.firstSpawn, 60);
+    assert.equal(c.jet.maxAlive, 1);
+    for (const role of ['enemy1', 'enemy2', 'boss']) {
+      assert.equal(c[role].firstSpawn, 0);
+      assert.equal(c[role].maxAlive, 0);
+    }
+  });
+
+  for (const kind of ['enemy1', 'enemy2', 'enemy5', 'boss']) {
+    it(`holds ${kind} back until its first spawn time`, () => {
+      const { firstSeen } = run((c) => {
+        for (const other of ['enemy1', 'enemy2', 'enemy5', 'boss']) { c[other].spawnChance = 0.1; c[other].firstSpawn = 0; }
+        c[kind].firstSpawn = 5;
+      }, 12);
+      assert.ok(firstSeen[kind] >= 5, JSON.stringify(firstSeen));
+      assert.ok(firstSeen[kind] < 9, JSON.stringify(firstSeen));
+    });
+
+    it(`never has more ${kind} than its limit`, () => {
+      const { most } = run((c) => {
+        for (const other of ['enemy1', 'enemy2', 'enemy5', 'boss']) { c[other].spawnChance = 0.1; c[other].firstSpawn = 0; }
+        c[kind].maxAlive = 2;
+      }, 12);
+      assert.equal(most[kind], 2);
+    });
+  }
+
+  it('treats zero as no limit', () => {
+    const { most } = run((c) => { c.enemy2.maxAlive = 0; c.enemy2.spawnChance = 1; c.enemy1.spawnChance = 0; c.enemy5.spawnChance = 0; c.boss.spawnChance = 0; }, 8);
+    assert.ok(most.enemy2 > 20);
+  });
+
+  it('keeps spawning the others once one has reached its limit', () => {
+    const { most } = run((c) => { c.enemy1.maxAlive = 1; c.enemy1.spawnChance = 0.9; c.enemy2.spawnChance = 0.1; c.enemy5.spawnChance = 0; c.boss.spawnChance = 0; }, 8);
+    assert.equal(most.enemy1, 1);
+    assert.ok(most.enemy2 > 10);
+  });
+
+  it('applies to the Su-34 too', () => {
+    const cfg = mapConfig(defaultConfig(), 'grid');
+    Object.assign(cfg.gameplay, { spawnInterval: 0.1, maxEnemies: 1e6 });
+    Object.assign(cfg.characters.jet, { firstSpawn: 2, maxAlive: 2, spawnChance: 1 });
+    for (const kind of ['enemy1', 'enemy2', 'enemy5']) cfg.characters[kind].spawnChance = 0;
+    const s = createGame(cfg, { rng: seeded(4) });
+    s.player.hp = s.player.maxHp = 1e15;
+    let most = 0;
+    let first = null;
+    for (let i = 0; i < 60 * 6; i++) {
+      step(s, DT, still);
+      s.player.hp = s.player.maxHp;
+      s.missiles.length = 0;
+      const n = s.enemies.filter((e) => e.kind === 'jet').length;
+      if (n && first === null) first = s.time;
+      most = Math.max(most, n);
+    }
+    assert.ok(first >= 2);
+    assert.equal(most, 2);
+  });
+
+  const onBuses = (edit) => {
+    const cfg = mapConfig(defaultConfig(), 'wasteland');
+    cfg.characters.rocketeer.spawnChance = 1;
+    edit(cfg.characters.rocketeer);
+    const s = createGame(cfg, { rng: seeded(6), view: { halfW: 1000, halfH: 1000 } });
+    s.spawnT = 1e9;
+    s.player.hp = s.player.maxHp = 1e15;
+    s.player.cool = 1e12;
+    return s;
+  };
+  const crew = (s) => s.enemies.filter((e) => e.kind === 'rocketeer').length;
+
+  it('keeps buses empty until the Rocketeer\'s time', () => {
+    const s = onBuses((c) => { c.firstSpawn = 2; });
+    for (let i = 0; i < 60; i++) step(s, DT, still);
+    assert.equal(crew(s), 0);
+    for (let i = 0; i < 90; i++) step(s, DT, still);
+    assert.ok(crew(s) > 0);
+  });
+
+  it('limits Rocketeers, and mans another bus after a kill', () => {
+    const s = onBuses((c) => { c.maxAlive = 2; });
+    step(s, DT, still);
+    assert.equal(crew(s), 2);
+    s.enemies.splice(s.enemies.findIndex((e) => e.kind === 'rocketeer'), 1);
+    step(s, DT, still);
+    assert.equal(crew(s), 2);
+  });
+
+  const editable = () => {
+    const config = defaultConfig();
+    for (const map of Object.values(config.maps)) for (const ch of Object.values(map.characters)) { delete ch.sprite; delete ch.sounds; }
+    return config;
+  };
+  for (const [name, mutate] of [
+    ['a negative first spawn', (c) => { c.maps.grid.characters.enemy1.firstSpawn = -1; }],
+    ['a negative limit', (c) => { c.maps.grid.characters.enemy2.maxAlive = -1; }],
+    ['a first spawn on the player', (c) => { c.maps.grid.characters.player.firstSpawn = 1; }],
+    ['a limit on the hostage', (c) => { c.maps.grid.characters.hostage.maxAlive = 1; }],
+  ]) {
+    it(`rejects ${name}`, () => {
+      const config = editable();
+      mutate(config);
+      assert.equal(validateConfig(config).ok, false);
+    });
+  }
+});
+
 describe('spawn rates per map', () => {
   const editable = () => {
     const config = defaultConfig();

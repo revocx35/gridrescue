@@ -18,7 +18,7 @@ Nobody needs an account to play. An admin signs in through [Authentik](https://g
 - XP dropped by each enemy, XP needed per upgrade, the size of the damage, fire rate and health upgrades
 - how many kills raise the difficulty level and how much each level strengthens enemies
 - the leaderboard: delete single scores or clear a map
-- spawn rates: how often enemies appear and how many at once for each map, and a spawn chance for each character, including how many Rocketeer buses there are
+- spawn rates: how often enemies appear and how many at once for each map, and for each character a spawn rate, the seconds before its first spawn and the most at once
 - gameplay numbers: health, speed, damage, how far away the hostage is and how wide the hint is
 
 ## How it plays

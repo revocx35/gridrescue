@@ -36,18 +36,19 @@ export const ROLE_LABELS = {
 };
 
 const COMBAT = ['size', 'hp', 'speed', 'damage'];
+const SPAWNING = ['spawnChance', 'firstSpawn', 'maxAlive'];
 export const ROLE_FIELDS = {
   player: [...COMBAT, 'fireInterval'],
   companion: ['enabled', ...COMBAT, 'fireInterval'],
   hostage: ['size'],
-  enemy1: ['enabled', 'spawnChance', ...COMBAT, 'xp', 'attackType'],
-  enemy2: ['enabled', 'spawnChance', ...COMBAT, 'xp', 'attackType'],
-  boss: ['enabled', 'spawnChance', ...COMBAT, 'endlessXp', 'attackType'],
-  enemy5: ['enabled', 'spawnChance', ...COMBAT, 'xp', 'fireInterval'],
+  enemy1: ['enabled', ...SPAWNING, ...COMBAT, 'xp', 'attackType'],
+  enemy2: ['enabled', ...SPAWNING, ...COMBAT, 'xp', 'attackType'],
+  boss: ['enabled', ...SPAWNING, ...COMBAT, 'endlessXp', 'attackType'],
+  enemy5: ['enabled', ...SPAWNING, ...COMBAT, 'xp', 'fireInterval'],
   ball: ['size', 'speed', 'damage'],
-  jet: ['enabled', 'spawnChance', 'size', 'hp', 'speed', 'xp', 'fireInterval'],
+  jet: ['enabled', ...SPAWNING, 'size', 'hp', 'speed', 'xp', 'fireInterval'],
   missile: ['size', 'speed', 'damage'],
-  rocketeer: ['enabled', 'spawnChance', 'size', 'hp', 'xp', 'fireInterval'],
+  rocketeer: ['enabled', ...SPAWNING, 'size', 'hp', 'xp', 'fireInterval'],
   rocket: ['size', 'speed', 'damage'],
 };
 
@@ -81,6 +82,14 @@ export const CHARACTER_FIELDS = {
   spawnChance: {
     label: 'Spawn rate (0 to 1)', min: 0, max: 1, step: 0.001,
     roleLabels: { boss: 'Spawn rate in Endless mode (0 to 1)', rocketeer: 'Chance a map area has a bus (0 to 1)' },
+  },
+  firstSpawn: {
+    label: 'Seconds before first spawn', min: 0, max: 3600, step: 1,
+    roleLabels: { boss: 'Seconds before first spawn in Endless mode', rocketeer: 'Seconds before Rocketeers appear' },
+  },
+  maxAlive: {
+    label: 'Most at once (0 = no limit)', min: 0, max: 120, step: 1,
+    roleLabels: { boss: 'Most at once in Endless mode (0 = no limit)' },
   },
   size: { label: 'Size (px)', min: 16, max: 220, step: 1 },
   hp: { label: 'Health', min: 1, max: 100000, step: 1 },
@@ -187,14 +196,14 @@ function defaultCharacters(map) {
     player: { name: names.player, sprite: null, size: 46, hp: 100, speed: 255, damage: 18, fireInterval: 0.26 },
     companion: { name: names.companion, sprite: null, enabled: true, size: 40, hp: 80, speed: 285, damage: 10, fireInterval: 0.4 },
     hostage: { name: names.hostage, sprite: null, size: 44 },
-    enemy1: { name: names.enemy1, sprite: null, enabled: true, spawnChance: 0.14, size: 62, hp: 130, speed: 135, damage: 20, xp: 40, attackType: 'melee' },
-    enemy2: { name: names.enemy2, sprite: null, enabled: true, spawnChance: 0.82, size: 36, hp: 32, speed: 180, damage: 8, xp: 10, attackType: 'melee' },
-    boss: { name: names.boss, sprite: null, enabled: true, spawnChance: 0.005, size: 118, hp: 1500, speed: 120, damage: 13, endlessXp: 500, attackType: 'pump' },
-    enemy5: { name: names.enemy5, sprite: null, enabled: true, spawnChance: 0.04, size: 96, hp: 650, speed: 90, damage: 30, xp: 150, fireInterval: 3 },
+    enemy1: { name: names.enemy1, sprite: null, enabled: true, spawnChance: 0.14, firstSpawn: 0, maxAlive: 0, size: 62, hp: 130, speed: 135, damage: 20, xp: 40, attackType: 'melee' },
+    enemy2: { name: names.enemy2, sprite: null, enabled: true, spawnChance: 0.82, firstSpawn: 0, maxAlive: 0, size: 36, hp: 32, speed: 180, damage: 8, xp: 10, attackType: 'melee' },
+    boss: { name: names.boss, sprite: null, enabled: true, spawnChance: 0.005, firstSpawn: 0, maxAlive: 0, size: 118, hp: 1500, speed: 120, damage: 13, endlessXp: 500, attackType: 'pump' },
+    enemy5: { name: names.enemy5, sprite: null, enabled: true, spawnChance: 0.04, firstSpawn: 40, maxAlive: 0, size: 96, hp: 650, speed: 90, damage: 30, xp: 150, fireInterval: 3 },
     ball: { sprite: null, size: 92, speed: 260, damage: 35 },
-    jet: { name: names.jet, sprite: null, enabled: true, spawnChance: 0.015, size: 120, hp: 260, speed: 430, xp: 100, fireInterval: 1.4 },
+    jet: { name: names.jet, sprite: null, enabled: true, spawnChance: 0.015, firstSpawn: 60, maxAlive: 1, size: 120, hp: 260, speed: 430, xp: 100, fireInterval: 1.4 },
     missile: { sprite: null, size: 46, speed: 300, damage: 40 },
-    rocketeer: { name: names.rocketeer, sprite: null, enabled: true, spawnChance: 0.2, size: 54, hp: 140, xp: 60, fireInterval: 3.2 },
+    rocketeer: { name: names.rocketeer, sprite: null, enabled: true, spawnChance: 0.2, firstSpawn: 0, maxAlive: 0, size: 54, hp: 140, xp: 60, fireInterval: 3.2 },
     rocket: { sprite: null, size: 42, speed: 260, damage: 28 },
   };
   const result = {};

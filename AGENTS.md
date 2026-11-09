@@ -38,7 +38,7 @@ compose.yaml, Dockerfile           Hardened deployment
 
 ```sh
 npm ci                        # install
-npm test                      # all tests (388): rules, modes, editor, PNG, audio, auth, real OIDC client against a local issuer
+npm test                      # all tests (407): rules, modes, editor, PNG, audio, auth, real OIDC client against a local issuer
 npm start                     # plain HTTP unless TLS_* is set; needs PUBLIC_URL for sign-in
 scripts/setup.sh IP:x.x.x.x   # once per checkout
 docker compose up -d --build  # deploy
@@ -66,7 +66,7 @@ docker compose up -d --build  # deploy
   `PUT /api/admin/config` rejects `sprite` and `sounds` keys on purpose.
 - Pacing lives per map in `maps.<id>.spawns` (`SPAWN_FIELDS`: interval and cap), which `mapConfig` merges into `gameplay`. How likely each character is lives on the character as
   `spawnChance` (Rocketeer: chance a map area has a bus). `Store.upgrade` moves both older forms (shared `gameplay`, then per-map chances) and strips the old keys, so never
-  add them back. Each spawn picks one character in proportion to the rates (`chooseSpawn`), so they need not add up to 1. The Endless boss has no time or count limit, so its rate alone decides.
+  add them back. Each spawn picks one character in proportion to the rates (`chooseSpawn`), so they need not add up to 1. Time and count limits are per character (`firstSpawn`, `maxAlive`).
 - Use `mapRoles(mapId)`, not `ROLES`, when walking one map's characters: `rocketeer` and `rocket` exist on the wasteland only.
 - A sound slot is declared in `SOUND_SLOTS` only. There are no built-in sounds and there must never be: an empty slot is silent.
 - Rules emit `shot` and `kamikaze` events with a `role`. Audio lives in `sound.js` and reacts to those; `sim.js` knows nothing about sound.
@@ -129,7 +129,7 @@ docker compose up -d --build  # deploy
 - The Boss attack (`attackType: 'boss'`) and the rescue boss share `bossMoves` and `bossContact`. Fix boss behaviour there, once. An enemy using it needs `bossTimers()` at spawn and only opens fire on screen; for the rescue boss it just means the pump pattern.
 - Kamikaze is not a kill: no XP and no `kills` increment unless a shot gets it first. It is not offered for the boss (`notFor` in `CHARACTER_FIELDS`).
 - Playwright's `wait_for_function` is blocked by the CSP (no `unsafe-eval`). Use selector waits in browser tests.
-- Enemy 5 cannot spawn in the first 40 seconds of a run (`ENEMY5_EARLIEST`). Spawn tests must set `s.time`.
+- Each spawning character has `firstSpawn` (seconds) and `maxAlive` (0 = no limit), checked in `canSpawn`; `updateBusCrews` applies them to the Rocketeer. Enemy 5 and the Su-34 default to 40 and 60 seconds, so spawn tests must set `s.time`.
 - Removing or renaming a config option needs a mapping in `Store.upgrade`. A stored value that no longer validates makes
   the whole file count as corrupt, so it gets moved aside and the game falls back to defaults.
 - nginx cannot verify IP SANs, so a proxy pinning the upstream certificate must use `proxy_ssl_name localhost`.

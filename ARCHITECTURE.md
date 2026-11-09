@@ -28,7 +28,7 @@ are deleted on every commit. A monotonically increasing `revision` gives optimis
 - The wasteland (`scenery.js`) has the same chunk system with its own contents: brown trees at the forest's density (the same planting code), rubbish hills, buses and green text signs. A sign's text comes from the admin's list by a seeded roll, and the sign is a fence as wide as its posts. Hills are one to three overlapping heaps; slow noise groups them into ranges with open ground between, and they stay near the middle of their chunk so there is always a way between two of them. Trees and hills stop walkers and shots. Buses and signs stop walkers
   only. Rockets and enemy 5's ball pass over everything. A Rocketeer stands on each bus that comes near the view, never moves and can be killed. A kill keeps that bus empty for the rest of the run; walking far enough away despawns the Rocketeer, and it is back when the player returns. The Rocketeer and its rocket exist only on this map.
 - Rocketeers launch guided rockets on the Kh-29's homing rules. Unlike a Kh-29, a rocket can be shot down by any bullet and is a target for the player's and companions' auto-aim, which counts it as nearer than it is. A click or tap also destroys it.
-- A game runs in one of two modes, chosen on the start screen. Rescue is the original game. Endless has no hostage, no arena and no guardian boss: `s.hostage` is null and spawns never stop until the player dies. The boss can then appear, at its spawn rate and with no time or count limit, as a regular enemy that uses its attack type and counts as a kill. Kills light no direction hint.
+- A game runs in one of two modes, chosen on the start screen. Rescue is the original game. Endless has no hostage, no arena and no guardian boss: `s.hostage` is null and spawns never stop until the player dies. The boss can then appear, within its own spawn settings, as a regular enemy that uses its attack type and counts as a kill. Kills light no direction hint.
 - The forest map (`scenery.js`) builds obstacles per 480 px chunk from a per-run seed: slow noise decides forest or open
   ground, jittered cells place trees, and each chunk rolls for wrecked tanks. Chunks are pure functions of the seed, so the
   cache can be dropped at any time and nothing is stored. Trees and tanks are circles to collision. Actors slide around
@@ -39,15 +39,14 @@ are deleted on every commit. A monotonically increasing `revision` gives optimis
 - The difficulty level is `1 + floor(kills / difficultyKills)`. Each level adds `difficultyIncrease` percent of the base health,
   damage and XP. Spawns take the level they appear at; the boss is rescaled
   when the level changes, keeping its share of health. Projectiles gain damage. Speed and size never change.
-- The Su-34 replaces a regular spawn at `jetChance`, one at a time and not in the first minute. It flies a straight line past the
+- The Su-34 is picked like any other spawn and is limited by its own settings. It flies a straight line past the
   player, launching a Kh-29 every `fireInterval` seconds while in view. Missiles home with a limited turn rate, ignore obstacles,
   expire after 8 seconds, and are ignored by bullets and auto-aim. Only a click or tap on one destroys it, which gives no kill
   and no XP.
 - The hostage is placed at a random angle, 85 to 115% of `hostageDistance` from the start.
-- Each map sets its own pacing (seconds between spawns, most enemies at once), and each character its own `spawnChance`. Each spawn picks one of Enemy 1, 2 and 5, the Su-34 and, in Endless, the boss in proportion to their rates, ignoring any that are off or not allowed yet, so a spawn is never wasted and 0.30 appears twice as often as 0.15. On the wasteland the Rocketeer's chance is how many map areas have a bus.
+- Each map sets its own pacing (seconds between spawns, most enemies at once), and each character its own `spawnChance`. Each spawn picks one of Enemy 1, 2 and 5, the Su-34 and, in Endless, the boss in proportion to their rates, ignoring any that are off or not allowed yet, so a spawn is never wasted and 0.30 appears twice as often as 0.15. Each character also has its own seconds before its first spawn and most at once (0 means no limit); by default Enemy 5 waits 40 seconds and the Su-34 waits 60, with one at a time. On the wasteland these two settings hold back or limit the Rocketeers, and the buses stay. On the wasteland the Rocketeer's chance is how many map areas have a bus.
 - Enemies appear just outside the view at intervals that shorten over time. Enemy 1 is a weighted rarity
-  (`enemy1Chance`) with more health and damage. Enemy 5 is rarer still (`enemy5Chance`) and cannot appear in the first 40
-  seconds. It walks like a melee enemy and every `fireInterval` seconds locks a line for half a second, then throws a ball
+  with more health and damage. Enemy 5 is rarer still. It walks like a melee enemy and every `fireInterval` seconds locks a line for half a second, then throws a ball
   whose texture, size, speed and damage come from that map's `ball` role. Enemies far behind the player despawn, which is what makes running
   away work.
 - Every regular kill lights a wedge `hintSpread` degrees wide. Its centre is offset randomly by up to 40% of the
