@@ -21,6 +21,8 @@ const BUS_PART_OFFSETS = [-66, 0, 66];
 const BUS_REACH = 102;
 const SIGN_CHANCES = [0.5, 0.2];
 const SIGN_BUS_GAP = 170;
+const BUS_TREE_GAP = 150;
+const SIGN_TREE_GAP = 130; // also keeps trees from covering the board, which stands above the sign's base
 const SIGN_GAP = 200;
 const SIGN_MARGIN = 100; // keeps the whole sign inside its chunk
 const SIGN_REACH = 80;
@@ -72,6 +74,26 @@ export function createForest(seed, clearings) {
 /** Buses and signs block walking but shots fly over them, or nothing could reach the Rocketeer on the roof. Hills stop both. */
 export function createWasteland(seed, clearings, busChance) {
   return { kind: 'wasteland', seed, clearings, busChance, chunks: new Map() };
+}
+
+/** Both maps' trees come from here, so their density is the same. isBlocked(x, y) rules out a spot. */
+function plantTrees(world, cx, cy, kind, isBlocked) {
+  const { seed } = world;
+  const left = cx * CHUNK_SIZE;
+  const top = cy * CHUNK_SIZE;
+  const trees = [];
+  const cells = CHUNK_SIZE / TREE_CELL;
+  for (let gx = 0; gx < cells; gx++) {
+    for (let gy = 0; gy < cells; gy++) {
+      const salt = 100 + gx * cells + gy;
+      const x = left + TREE_CELL * (gx + 0.5) + (hash(seed, cx, cy, salt + 200) - 0.5) * TREE_JITTER;
+      const y = top + TREE_CELL * (gy + 0.5) + (hash(seed, cx, cy, salt + 400) - 0.5) * TREE_JITTER;
+      const chance = forestAmount(seed, x, y) > 0.5 ? TREE_CHANCE_IN_FOREST : TREE_CHANCE_IN_OPEN;
+      if (hash(seed, cx, cy, salt) >= chance || isBlocked(x, y)) continue;
+      trees.push({ kind, x, y, variant: hash(seed, cx, cy, salt + 600) });
+    }
+  }
+  return trees;
 }
 
 function wastelandHill(world, roll, left, top) {
@@ -134,7 +156,18 @@ function buildWastelandChunk(world, cx, cy) {
     items.push(sign);
     for (const offset of SIGN_PART_OFFSETS) circles.push({ x: x + offset, y, r: SIGN_PART_RADIUS });
   });
-  return { items, circles, cover: hill ? hill.lobes : [] };
+
+  const cover = hill ? [...hill.lobes] : [];
+  const trees = plantTrees(world, cx, cy, 'brownTree', (x, y) => !isFree(x, y, TREE_RADIUS)
+    || (bus && Math.hypot(x - bus.x, y - bus.y) < BUS_TREE_GAP)
+    || signs.some((sign) => Math.hypot(x - sign.x, y - sign.y) < SIGN_TREE_GAP));
+  for (const tree of trees) {
+    const circle = { x: tree.x, y: tree.y, r: TREE_RADIUS };
+    circles.push(circle);
+    cover.push(circle);
+  }
+  items.unshift(...trees); // first, so a tree is never drawn over a sign
+  return { items, circles, cover };
 }
 
 function buildChunk(world, cx, cy) {
@@ -167,18 +200,11 @@ function buildChunk(world, cx, cy) {
     }
   });
 
-  const cells = CHUNK_SIZE / TREE_CELL;
-  for (let gx = 0; gx < cells; gx++) {
-    for (let gy = 0; gy < cells; gy++) {
-      const salt = 100 + gx * cells + gy;
-      const x = left + TREE_CELL * (gx + 0.5) + (hash(seed, cx, cy, salt + 200) - 0.5) * TREE_JITTER;
-      const y = top + TREE_CELL * (gy + 0.5) + (hash(seed, cx, cy, salt + 400) - 0.5) * TREE_JITTER;
-      const chance = forestAmount(seed, x, y) > 0.5 ? TREE_CHANCE_IN_FOREST : TREE_CHANCE_IN_OPEN;
-      if (roll(salt) >= chance || isCleared(x, y, TREE_RADIUS)) continue;
-      if (tanks.some((t) => Math.hypot(x - t.x, y - t.y) < TANK_TREE_GAP)) continue;
-      items.push({ kind: 'tree', x, y, variant: hash(seed, cx, cy, salt + 600) });
-      circles.push({ x, y, r: TREE_RADIUS });
-    }
+  const trees = plantTrees(world, cx, cy, 'tree', (x, y) => isCleared(x, y, TREE_RADIUS)
+    || tanks.some((t) => Math.hypot(x - t.x, y - t.y) < TANK_TREE_GAP));
+  for (const tree of trees) {
+    items.push(tree);
+    circles.push({ x: tree.x, y: tree.y, r: TREE_RADIUS });
   }
   return { items, circles, cover: circles };
 }

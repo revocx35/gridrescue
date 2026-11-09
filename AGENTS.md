@@ -12,7 +12,7 @@ No build step, no bundler, no framework in the browser: `public/` is served as w
 ```
 public/index.html, js/main.js      Game page: applies layout, input, game loop, HUD
 public/js/sim.js                   Game rules. No DOM. Runs headless in tests
-public/js/scenery.js               Map obstacles (forest trees and tanks, wasteland buses, signs and hills): seeded chunks, collision, lookup. No DOM
+public/js/scenery.js               Map obstacles (forest trees and tanks, wasteland trees, buses, signs and hills): seeded chunks, collision, lookup. No DOM
 public/js/sound.js                 Plays uploaded sounds through Web Audio; loops idle sounds and the boss theme
 public/js/audio-convert.js         Prepares a sound for upload: keeps MP3, converts anything else to WAV in the browser
 public/js/render.js                Canvas drawing and the built-in default art for each map
@@ -38,7 +38,7 @@ compose.yaml, Dockerfile           Hardened deployment
 
 ```sh
 npm ci                        # install
-npm test                      # all tests (381): rules, modes, editor, PNG, audio, auth, real OIDC client against a local issuer
+npm test                      # all tests (385): rules, modes, editor, PNG, audio, auth, real OIDC client against a local issuer
 npm start                     # plain HTTP unless TLS_* is set; needs PUBLIC_URL for sign-in
 scripts/setup.sh IP:x.x.x.x   # once per checkout
 docker compose up -d --build  # deploy
@@ -120,7 +120,8 @@ docker compose up -d --build  # deploy
   `s.enemies`, and only `destroyMissileAt` removes one early: bullets and auto-aim ignore them, and it is not a kill.
 - Rockets (`kind: 'rocket'`) share `s.missiles` with Kh-29s but are the opposite to deal with: bullets and auto-aim hit them, and clicks still work.
   Only rockets are shot down; a Kh-29 still needs `destroyMissileAt`. The Su-34 can also appear on the wasteland.
-- Buses and signs stop actors but not shots; hills stop both (`chunk.circles` versus `chunk.cover`). The Rocketeer on a bus roof has to stay reachable, so keep the two lists apart.
+- Buses and signs stop actors but not shots; hills and trees stop both (`chunk.circles` versus `chunk.cover`). The Rocketeer on a bus roof has to stay reachable, so keep the two lists apart.
+- Forest and wasteland trees both come from `plantTrees`, so their density stays the same; wasteland trees are `brownTree` items and, like hills, stop shots. Do not give the wasteland its own tree loop.
 - A sign's solid width is fixed in `scenery.js` while its text is admin-written, so the board is a fixed width and long words shrink to fit (`#drawSign`). Do not size the board from its text.
 - Hills stay within `HILL_MARGIN` of their chunk's edge so that neighbouring hills always leave a gap wide enough to walk through. Raising the lobe count or radius needs `HILL_REACH` and the margin raised with it.
 - `s.crewedBuses` is the only record of which buses are manned. Despawning a Rocketeer by distance removes its entry, so it comes back; killing one leaves the entry, so it does not.

@@ -250,7 +250,7 @@ describe('wasteland obstacles', () => {
       const arena = s.cfg.gameplay.arenaRadius;
       forEachItemIn(s.world, -9000, -9000, 9000, 9000, (item) => {
         for (const part of item.lobes ?? [item]) {
-          const r = part.r ?? 80;
+          const r = part.r ?? (item.kind === 'sign' ? 80 : 24);
           assert.ok(Math.hypot(part.x, part.y) >= 260 + r - 1, `${item.kind} at the start`);
           assert.ok(Math.hypot(part.x - s.hostage.x, part.y - s.hostage.y) >= arena + 60 + r - 1, `${item.kind} in the arena`);
         }
@@ -277,6 +277,51 @@ describe('wasteland obstacles', () => {
           if (a === b || Math.hypot(a.x - b.x, a.y - b.y) > 700) continue;
           for (const la of a.lobes) for (const lb of b.lobes) assert.ok(Math.hypot(la.x - lb.x, la.y - lb.y) - la.r - lb.r >= 28);
         }
+      }
+    }
+  });
+
+  const count = (map, seed, kind) => {
+    const s = game({ map, seed });
+    let n = 0;
+    forEachItemIn(s.world, -7000, -7000, 7000, 7000, (item) => { if (item.kind === kind) n += 1; });
+    return n;
+  };
+
+  it('has about as many trees as the forest map', () => {
+    for (const seed of [1, 2, 3, 4]) {
+      const ratio = count('wasteland', seed, 'brownTree') / count('forest', seed, 'tree');
+      assert.ok(ratio > 0.7 && ratio <= 1.05, `seed ${seed}: ${ratio}`);
+    }
+  });
+
+  it('gives the forest no brown trees', () => assert.equal(count('forest', 1, 'brownTree'), 0));
+
+  it('stops walkers and shots at a tree', () => {
+    const { s, items } = collect(1, 'brownTree');
+    const tree = items.find((item) => Math.hypot(item.x, item.y) > 500);
+    assert.equal(hitsSolid(s.world, tree.x, tree.y), true);
+    s.player.x = tree.x;
+    s.player.y = tree.y - 70;
+    s.player.cool = 9999;
+    for (let i = 0; i < 24; i++) {
+      step(s, DT, { x: 0, y: 1 });
+      assert.ok(Math.hypot(s.player.x - tree.x, s.player.y - tree.y) >= 24);
+    }
+  });
+
+  it('keeps trees off buses, signs and hills', () => {
+    const s = game({ map: 'wasteland', seed: 5 });
+    const all = [];
+    forEachItemIn(s.world, -7000, -7000, 7000, 7000, (item) => all.push(item));
+    const trees = all.filter((item) => item.kind === 'brownTree');
+    assert.ok(trees.length);
+    for (const tree of trees) {
+      for (const other of all) {
+        const near = Math.hypot(tree.x - other.x, tree.y - other.y);
+        if (other.kind === 'bus') assert.ok(near >= 150);
+        if (other.kind === 'sign') assert.ok(near >= 130);
+        for (const lobe of other.lobes ?? []) assert.ok(Math.hypot(tree.x - lobe.x, tree.y - lobe.y) >= lobe.r + 24);
       }
     }
   });

@@ -361,6 +361,7 @@ let sceneryStamps = null;
 function getSceneryStamps() {
   sceneryStamps ??= {
     tree: [['#1a3a1e', '#27562a', '#3a7337'], ['#1c3320', '#2e5a2c', '#4a7c35'], ['#2a3a16', '#46611f', '#6b8430']].map(treeStamp),
+    brownTree: [['#4a3420', '#6b4a2c', '#8a6540'], ['#3f2e1e', '#5e4329', '#7d5c3a'], ['#54391f', '#774f28', '#96703f']].map(treeStamp),
     tank: [['#4a5236', '#333a26'], ['#3b3d33', '#292b24']].map(tankStamp),
     bus: [['#c9a227', '#a8861c'], ['#a23c2c', '#823024'], ['#5b7083', '#465767']].map(busStamp),
     hill: [['#6b6256', '#857a69', '#a39683'], ['#5e5a55', '#7a756c', '#979187'], ['#70604e', '#8c7a62', '#a8977e']]
@@ -606,7 +607,7 @@ export class Renderer {
       const art = set[Math.floor(item.variant * set.length)];
       ctx.save();
       ctx.translate(item.x, item.y);
-      if (item.kind !== 'tree') ctx.rotate(item.angle);
+      if (item.angle !== undefined) ctx.rotate(item.angle);
       if (item.kind === 'tank') smoke.push(item);
       ctx.drawImage(art.canvas, -art.size / 2, -art.size / 2, art.size, art.size);
       ctx.restore();

@@ -8,6 +8,8 @@ import { applyUpgrade, availableUpgrades, createGame, destroyMissileAt, step } f
 
 const FIXED_STEP = 1 / 60;
 const NAME_KEY = 'gridrescue-name';
+const MAP_KEY = 'gridrescue-map';
+const MODE_KEY = 'gridrescue-mode';
 // How far from a missile a press still counts, in CSS pixels. Fingers are less exact than a cursor.
 const MISSILE_REACH = { touch: 44, mouse: 28 };
 const $ = (id) => document.getElementById(id);
@@ -16,6 +18,21 @@ const SECTION_IDS = { title: 'section-title', game: 'section-game', joystick: 's
 
 const layoutQuery = matchMedia('(pointer: coarse), (max-width: 760px)');
 const isMobile = () => layoutQuery.matches;
+
+function remember(key, value) {
+  try {
+    localStorage.setItem(key, value);
+  } catch { /* private browsing */ }
+}
+
+/** The stored choice if it is still a valid one, otherwise the first option. */
+function recall(key, options) {
+  try {
+    const stored = localStorage.getItem(key);
+    if (options.includes(stored)) return stored;
+  } catch { /* private browsing */ }
+  return options[0];
+}
 
 function applyOrder(site) {
   const order = isMobile() ? site.mobileOrder : site.desktopOrder;
@@ -137,7 +154,7 @@ class Game {
   constructor(fullConfig, mapId, sprites, loadMapSprites) {
     this.fullConfig = fullConfig;
     this.loadMapSprites = loadMapSprites;
-    this.gameMode = GAME_MODES[0];
+    this.gameMode = recall(MODE_KEY, GAME_MODES);
     this.sounds = new SoundBoard();
     this.useMap(mapId, sprites, true);
     this.renderer = new Renderer($('game'), this.config, sprites);
@@ -213,6 +230,7 @@ class Game {
   selectMode(id) {
     if (id === this.gameMode || (this.mode !== 'menu' && this.mode !== 'ended')) return;
     this.gameMode = id;
+    remember(MODE_KEY, id);
     buildRoster(this.config, this.sprites, id);
     this.state = this.newGame();
     this.mode = 'menu';
@@ -226,6 +244,7 @@ class Game {
     // A slower earlier choice, or a game started meanwhile, must not swap the map underneath.
     if (this.pendingMap !== id || (this.mode !== 'menu' && this.mode !== 'ended')) return;
     this.useMap(id, sprites);
+    remember(MAP_KEY, id);
     this.mode = 'menu';
     this.showMenu();
   }
@@ -619,7 +638,8 @@ async function main() {
     if (!loaded.has(id)) loaded.set(id, loadSprites(id, config.maps[id].characters));
     return loaded.get(id);
   };
-  new Game(config, MAPS[0], await loadMapSprites(MAPS[0]), loadMapSprites);
+  const firstMap = recall(MAP_KEY, MAPS);
+  new Game(config, firstMap, await loadMapSprites(firstMap), loadMapSprites);
 }
 
 main();
