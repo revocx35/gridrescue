@@ -505,6 +505,11 @@ describe('rocket interception', () => {
   });
 });
 
+const onlyBoss = (cfg) => {
+  cfg.characters.boss.spawnChance = 1;
+  for (const kind of ['enemy1', 'enemy2', 'enemy5', 'jet']) cfg.characters[kind].spawnChance = 0;
+};
+
 describe('endless mode', () => {
   const noBossAtStart = () => game({ mode: 'endless' });
 
@@ -537,9 +542,8 @@ describe('endless mode', () => {
 
   const withBoss = () => {
     const cfg = mapConfig(defaultConfig(), 'grid');
-    cfg.characters.jet.enabled = false; // this rng would always roll the jet first
-    const s = createGame(cfg, { rng: () => 0.001, mode: 'endless' });
-    s.time = 61;
+    onlyBoss(cfg);
+    const s = createGame(cfg, { rng: seeded(5), mode: 'endless' });
     s.spawnT = 0;
     step(s, DT, still);
     return s;
@@ -554,31 +558,59 @@ describe('endless mode', () => {
     assert.equal(boss.attack, s.cfg.characters.boss.attackType);
   });
 
-  it('never spawns the boss early, or with chance zero, or two at once, or when it is off', () => {
-    const early = createGame(mapConfig(defaultConfig(), 'grid'), { rng: () => 0.001, mode: 'endless' });
-    early.spawnT = 0;
-    step(early, DT, still);
-    assert.equal(early.enemies.some((e) => e.kind === 'boss'), false);
+  it('can spawn from the first moment, and several at once', () => {
+    const s = withBoss();
+    assert.equal(s.enemies.filter((e) => e.kind === 'boss').length, 1);
+    assert.ok(s.time < 1);
+    s.spawnT = 0;
+    step(s, DT, still);
+    assert.equal(s.enemies.filter((e) => e.kind === 'boss').length, 2);
+  });
 
-    const none = createGame(mapConfig(defaultConfig(), 'grid'), { rng: () => 0.001, mode: 'endless' });
-    none.cfg.characters.boss.spawnChance = 0;
-    none.time = 61;
-    none.spawnT = 0;
-    step(none, DT, still);
-    assert.equal(none.enemies.some((e) => e.kind === 'boss'), false);
+  const noBoss = (edit, mode = 'endless') => {
+    const cfg = mapConfig(defaultConfig(), 'grid');
+    onlyBoss(cfg);
+    cfg.characters.enemy2.spawnChance = 1;
+    edit(cfg);
+    const s = createGame(cfg, { rng: seeded(5), mode });
+    s.spawnT = 0;
+    for (let i = 0; i < 20; i++) { s.spawnT = 0; step(s, DT, still); }
+    return s.enemies.some((e) => e.kind === 'boss');
+  };
 
-    const twice = withBoss();
-    twice.spawnT = 0;
-    step(twice, DT, still);
-    assert.equal(twice.enemies.filter((e) => e.kind === 'boss').length, 1);
+  it('never spawns the boss with a rate of zero or when it is off', () => {
+    assert.equal(noBoss((cfg) => { cfg.characters.boss.spawnChance = 0; }), false);
+    assert.equal(noBoss((cfg) => { cfg.characters.boss.enabled = false; }), false);
+    assert.equal(noBoss(() => {}), true);
+  });
 
-    const off = mapConfig(defaultConfig(), 'grid');
-    off.characters.boss.enabled = false;
-    const disabled = createGame(off, { rng: () => 0.001, mode: 'endless' });
-    disabled.time = 61;
-    disabled.spawnT = 0;
-    step(disabled, DT, still);
-    assert.equal(disabled.enemies.some((e) => e.kind === 'boss'), false);
+  it('never spawns an extra boss in Rescue, whatever its rate', () => {
+    const cfg = mapConfig(defaultConfig(), 'grid');
+    cfg.characters.boss.spawnChance = 1;
+    const s = createGame(cfg, { rng: seeded(5) });
+    for (let i = 0; i < 40; i++) { s.spawnT = 0; step(s, DT, still); }
+    assert.equal(s.enemies.some((e) => e.kind === 'boss'), false);
+  });
+
+  it('holds the boss to its rate against other characters', () => {
+    const cfg = mapConfig(defaultConfig(), 'grid');
+    Object.assign(cfg.gameplay, { spawnInterval: 0.1, maxEnemies: 1e6 });
+    cfg.characters.boss.spawnChance = 0.15;
+    cfg.characters.enemy1.spawnChance = 0.3;
+    cfg.characters.enemy2.spawnChance = 0.5;
+    cfg.characters.enemy5.spawnChance = 0;
+    cfg.characters.jet.enabled = false;
+    const s = createGame(cfg, { rng: seeded(21), mode: 'endless' });
+    s.player.hp = s.player.maxHp = 1e15;
+    s.player.cool = 1e12;
+    const counts = {};
+    for (let i = 0; i < 60 * 500; i++) {
+      step(s, DT, still);
+      for (const e of s.enemies) counts[e.kind] = (counts[e.kind] ?? 0) + 1;
+      s.enemies.length = 0;
+    }
+    const ratio = counts.enemy1 / counts.boss;
+    assert.ok(ratio > 1.7 && ratio < 2.3, JSON.stringify(counts));
   });
 
   it('counts a boss kill like any other and keeps the game running', () => {
@@ -735,8 +767,8 @@ describe('boss attack', () => {
     const cfg = mapConfig(defaultConfig(), 'grid');
     cfg.characters.boss.attackType = 'boss';
     cfg.characters.jet.enabled = false;
-    const s = createGame(cfg, { rng: () => 0.001, mode: 'endless' });
-    s.time = 61;
+    onlyBoss(cfg);
+    const s = createGame(cfg, { rng: seeded(5), mode: 'endless' });
     s.spawnT = 0;
     step(s, DT, still);
     const boss = s.enemies.find((e) => e.kind === 'boss');

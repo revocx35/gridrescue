@@ -38,7 +38,7 @@ compose.yaml, Dockerfile           Hardened deployment
 
 ```sh
 npm ci                        # install
-npm test                      # all tests (385): rules, modes, editor, PNG, audio, auth, real OIDC client against a local issuer
+npm test                      # all tests (388): rules, modes, editor, PNG, audio, auth, real OIDC client against a local issuer
 npm start                     # plain HTTP unless TLS_* is set; needs PUBLIC_URL for sign-in
 scripts/setup.sh IP:x.x.x.x   # once per checkout
 docker compose up -d --build  # deploy
@@ -66,7 +66,7 @@ docker compose up -d --build  # deploy
   `PUT /api/admin/config` rejects `sprite` and `sounds` keys on purpose.
 - Pacing lives per map in `maps.<id>.spawns` (`SPAWN_FIELDS`: interval and cap), which `mapConfig` merges into `gameplay`. How likely each character is lives on the character as
   `spawnChance` (Rocketeer: chance a map area has a bus). `Store.upgrade` moves both older forms (shared `gameplay`, then per-map chances) and strips the old keys, so never
-  add them back. Regular enemies are picked in proportion to their chances, so these need not add up to 1; the Su-34 and Endless boss are separate rolls first.
+  add them back. Each spawn picks one character in proportion to the rates (`chooseSpawn`), so they need not add up to 1. The Endless boss has no time or count limit, so its rate alone decides.
 - Use `mapRoles(mapId)`, not `ROLES`, when walking one map's characters: `rocketeer` and `rocket` exist on the wasteland only.
 - A sound slot is declared in `SOUND_SLOTS` only. There are no built-in sounds and there must never be: an empty slot is silent.
 - Rules emit `shot` and `kamikaze` events with a `role`. Audio lives in `sound.js` and reacts to those; `sim.js` knows nothing about sound.

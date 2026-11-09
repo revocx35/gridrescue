@@ -79,8 +79,8 @@ const REGULAR_ENEMIES = ['enemy1', 'enemy2', 'enemy5'];
 export const CHARACTER_FIELDS = {
   enabled: { label: 'On this map', boolean: true },
   spawnChance: {
-    label: 'Spawn chance (0 to 1)', min: 0, max: 1, step: 0.001,
-    roleLabels: { boss: 'Spawn chance in Endless mode (0 to 1)', rocketeer: 'Chance a map area has a bus (0 to 1)' },
+    label: 'Spawn rate (0 to 1)', min: 0, max: 1, step: 0.001,
+    roleLabels: { boss: 'Spawn rate in Endless mode (0 to 1)', rocketeer: 'Chance a map area has a bus (0 to 1)' },
   },
   size: { label: 'Size (px)', min: 16, max: 220, step: 1 },
   hp: { label: 'Health', min: 1, max: 100000, step: 1 },

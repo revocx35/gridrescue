@@ -362,7 +362,7 @@ function spawnPanel() {
     'div', { class: 'panel block spawn-panel' },
     el('h2', { textContent: `Spawn rates on ${draft.maps[currentMap].name || currentMap}` }),
     grid,
-    el('p', { class: 'spawn-note', textContent: 'Each character\'s spawn chance is on its card below. Spawns get faster during a run, up to about twice this rate.' }),
+    el('p', { class: 'spawn-note', textContent: 'Each character\'s spawn rate is on its card below. Rates are compared with each other: 0.30 appears twice as often as 0.15. Spawns get faster during a run, up to about twice this pace.' }),
   );
 }
 

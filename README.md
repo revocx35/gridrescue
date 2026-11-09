@@ -29,7 +29,7 @@ Nobody needs an account to play. An admin signs in through [Authentik](https://g
 | Attack | Automatic: you and your companion fire at the nearest enemy in range. Hold the right joystick on phones, or the left mouse button on desktop, to aim yourself |
 | Find the hostage | Every enemy you destroy briefly lights a wedge of the grid. The hostage is somewhere inside it |
 | Maps | Choose on the start screen. The Grid is open floor; the forest map is full of trees and exploded tanks that block movement and bullets; the White Wasteland has green signs and wrecked buses that block walking, and brown trees and rubbish hills that block walking and bullets |
-| Modes | Rescue is the main game. Endless has no hostage: survive as long as you can while the boss turns up, very rarely, as just another enemy |
+| Modes | Rescue is the main game. Endless has no hostage: survive as long as you can while the boss turns up, at the rate the admin sets, as just another enemy |
 | Rocketeer | Stands on the wasteland's buses and cannot move. Launches guided rockets, which your auto-fire and companions can shoot down |
 | Enemy 5 | The strongest and rarest enemy. Throws a large ball every 3 seconds that rolls through cover |
 | Su-34 | Very rare. Crosses the screen firing guided Kh-29 missiles, which chase you until you click or tap them, or they run out of fuel. Bullets pass through them |

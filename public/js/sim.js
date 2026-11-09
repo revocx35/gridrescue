@@ -27,7 +27,6 @@ const NEAREST_HOSTAGE_FACTOR = 0.85;
 const FASTEST_SPAWN_FACTOR = 0.42;
 const RESCUE_GAP = 24;
 const KILL_HEAL = { enemy1: 12, enemy2: 3, enemy5: 30, jet: 20, boss: 40, rocketeer: 10 };
-const ENDLESS_BOSS_EARLIEST = 60;
 const START_CLEARING = 260;
 const BUS_SCAN_MARGIN = 240;
 const ROCKET_PRIORITY = 0.6; // auto-aim counts a rocket as this much closer, so it is shot down in a crowd
@@ -278,12 +277,12 @@ function spawnEnemy(s) {
   const x = player.x + Math.cos(angle) * ring;
   const y = player.y + Math.sin(angle) * ring;
   if (hostage && Math.hypot(x - hostage.x, y - hostage.y) < g.arenaRadius + 60) return;
-  if (shouldSpawnJet(s)) {
+  const kind = chooseSpawn(s);
+  if (!kind) return;
+  if (kind === 'jet') {
     spawnJet(s, x, y);
     return;
   }
-  const kind = shouldSpawnEndlessBoss(s) ? 'boss' : chooseEnemyKind(s);
-  if (!kind) return;
   const e = addEnemy(s, kind, x, y);
   const ch = cfg.characters[kind];
   e.speed = ch.speed * (0.92 + rng() * 0.16);
@@ -296,21 +295,18 @@ function spawnEnemy(s) {
   if (kind === 'boss') emit(s, 'bossSpawn');
 }
 
-function shouldSpawnEndlessBoss(s) {
-  if (s.mode !== 'endless' || !s.cfg.characters.boss.enabled || s.time < ENDLESS_BOSS_EARLIEST) return false;
-  if (s.enemies.some((e) => e.kind === 'boss')) return false;
-  return s.rng() < s.cfg.characters.boss.spawnChance;
+/** Whether this character may appear right now. The boss has no limits: in Endless its rate alone decides. */
+function canSpawn(s, kind) {
+  if (kind === 'boss') return s.mode === 'endless';
+  if (kind === 'enemy5') return s.time >= ENEMY5_EARLIEST;
+  if (kind === 'jet') return s.time >= JET_EARLIEST && !s.enemies.some((e) => e.kind === 'jet');
+  return true;
 }
 
-function shouldSpawnJet(s) {
-  if (!s.cfg.characters.jet.enabled || s.time < JET_EARLIEST || s.enemies.some((e) => e.kind === 'jet')) return false;
-  return s.rng() < s.cfg.characters.jet.spawnChance;
-}
-
-/** Every spawn is one of the regular enemies, in proportion to their chances. A switched-off enemy's share goes to the rest. */
-function chooseEnemyKind(s) {
+/** Every spawn picks one character in proportion to the rates, so 0.30 appears twice as often as 0.15. */
+function chooseSpawn(s) {
   const c = s.cfg.characters;
-  const pool = ['enemy5', 'enemy1', 'enemy2'].filter((kind) => c[kind].enabled && c[kind].spawnChance > 0 && (kind !== 'enemy5' || s.time >= ENEMY5_EARLIEST));
+  const pool = ['enemy5', 'enemy1', 'enemy2', 'jet', 'boss'].filter((kind) => c[kind].enabled && c[kind].spawnChance > 0 && canSpawn(s, kind));
   const total = pool.reduce((sum, kind) => sum + c[kind].spawnChance, 0);
   if (!total) return null;
   let roll = s.rng() * total;

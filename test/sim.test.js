@@ -1073,7 +1073,11 @@ describe('difficulty levels', () => {
 
 describe('Su-34 and Kh-29', () => {
   function withJet(edit) {
-    const s = game(1, (c) => { c.characters.jet.spawnChance = 1; edit?.(c); });
+    const s = game(1, (c) => {
+      c.characters.jet.spawnChance = 1;
+      for (const kind of ['enemy1', 'enemy2', 'enemy5']) c.characters[kind].spawnChance = 0;
+      edit?.(c);
+    });
     s.time = 61;
     s.spawnT = 0;
     s.cfg.characters.player.damage = 0;
