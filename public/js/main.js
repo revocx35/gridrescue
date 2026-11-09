@@ -4,7 +4,7 @@ import { fetchBoard, postScore, renderBoard, startRun } from './leaderboard.js';
 import { Renderer, drawSpriteInBox, loadSprites } from './render.js';
 import { GAME_MODES, MAPS, MAX_SCORE_NAME_LENGTH, NAMED_ROLES, mapConfig } from './schema.js';
 import { SoundBoard } from './sound.js';
-import { applyUpgrade, createGame, destroyMissileAt, shopSections, step } from './sim.js';
+import { applyUpgrade, createGame, destroyMissileAt, frameSeconds, shopSections, step } from './sim.js';
 
 const FIXED_STEP = 1 / 60;
 const NAME_KEY = 'gridrescue-name';
@@ -677,7 +677,7 @@ class Game {
   }
 
   frame(time) {
-    const dt = Math.min(0.1, (time - this.lastFrame) / 1000);
+    const dt = frameSeconds(time, this.lastFrame);
     this.lastFrame = time;
     if (this.mode === 'playing') {
       this.accumulator += dt;

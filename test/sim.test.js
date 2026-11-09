@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { defaultConfig, mapConfig } from '../public/js/schema.js';
 import { forEachItemIn, hitsSolid } from '../public/js/scenery.js';
-import { SHOP_SECTIONS, applyUpgrade, availableUpgrades, createGame, destroyMissileAt, scoreLimits, shopSections, step } from '../public/js/sim.js';
+import { SHOP_SECTIONS, applyUpgrade, availableUpgrades, createGame, destroyMissileAt, frameSeconds, scoreLimits, shopSections, step } from '../public/js/sim.js';
 
 const DT = 1 / 60;
 
@@ -425,6 +425,17 @@ describe('enemy attack types', () => {
     const s = bossFight('pump');
     until(s, () => s.bullets.length > 0, 60 * 5);
     assert.equal(s.bullets.length, 5);
+  });
+});
+
+describe('frame timing', () => {
+  it('never goes backwards, even when a frame is stamped before the last clock read', () => {
+    assert.equal(frameSeconds(1000, 1005), 0);
+  });
+
+  it('measures an ordinary frame and caps a long one', () => {
+    assert.ok(Math.abs(frameSeconds(1016, 1000) - 0.016) < 1e-9);
+    assert.equal(frameSeconds(9000, 1000), 0.1);
   });
 });
 

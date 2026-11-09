@@ -38,7 +38,7 @@ compose.yaml, Dockerfile           Hardened deployment
 
 ```sh
 npm ci                        # install
-npm test                      # all tests (423): rules, modes, editor, PNG, audio, auth, real OIDC client against a local issuer
+npm test                      # all tests (425): rules, modes, editor, PNG, audio, auth, real OIDC client against a local issuer
 npm start                     # plain HTTP unless TLS_* is set; needs PUBLIC_URL for sign-in
 scripts/setup.sh IP:x.x.x.x   # once per checkout
 docker compose up -d --build  # deploy
@@ -131,6 +131,7 @@ docker compose up -d --build  # deploy
 - The Boss attack (`attackType: 'boss'`) and the rescue boss share `bossMoves` and `bossContact`. Fix boss behaviour there, once. An enemy using it needs `bossTimers()` at spawn and only opens fire on screen; for the rescue boss it just means the pump pattern.
 - XP never interrupts the game: each full bar banks `s.upgradePoints`, and the shop freezes the game only through the page's `shop` mode. `s.status` stays `playing` throughout, and `step` is simply not called.
 - The personal laser only removes `s.bullets` flying towards the player. It skips Enemy 5's ball, and it does not touch rockets or Kh-29s, which live in `s.missiles`.
+- Take a frame's duration only from `frameSeconds`. `requestAnimationFrame` timestamps can be earlier than a `performance.now()` read in an input handler, and a negative duration gives a ring a negative radius: `arc` throws, and an exception in `Game.frame` ends the game loop for good.
 - Kamikaze is not a kill: no XP and no `kills` increment unless a shot gets it first. It is not offered for the boss (`notFor` in `CHARACTER_FIELDS`).
 - Playwright's `wait_for_function` is blocked by the CSP (no `unsafe-eval`). Use selector waits in browser tests.
 - Each spawning character has `firstSpawn` (seconds) and `maxAlive` (0 = no limit), checked in `canSpawn`; `updateBusCrews` applies them to the Rocketeer. Enemy 5 and the Su-34 default to 40 and 60 seconds, so spawn tests must set `s.time`.

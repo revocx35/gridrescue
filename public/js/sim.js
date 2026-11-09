@@ -21,6 +21,7 @@ const MISSILE_TURN_RATE = 2.4; // radians per second: fast enough to chase, slow
 const JET_MAX_LIFE = 30;
 const BALL_TELEGRAPH = 0.5;
 const BALL_TTL = 5;
+const LONGEST_FRAME = 0.1;
 const NEAREST_HOSTAGE_FACTOR = 0.85;
 const FASTEST_SPAWN_FACTOR = 0.42;
 const RESCUE_GAP = 24;
@@ -119,6 +120,11 @@ export function createGame(cfg, { rng = Math.random, view = { halfW: 500, halfH:
     hint: null,
     events: [],
   };
+}
+
+/** Seconds a drawn frame covers. A frame's timestamp can be earlier than a clock read just before it, so never below zero. */
+export function frameSeconds(now, last) {
+  return Math.max(0, Math.min(LONGEST_FRAME, (now - last) / 1000));
 }
 
 function emit(s, type, data = {}) {
