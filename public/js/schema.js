@@ -40,14 +40,14 @@ export const ROLE_FIELDS = {
   player: [...COMBAT, 'fireInterval'],
   companion: ['enabled', ...COMBAT, 'fireInterval'],
   hostage: ['size'],
-  enemy1: ['enabled', ...COMBAT, 'xp', 'attackType'],
-  enemy2: ['enabled', ...COMBAT, 'xp', 'attackType'],
-  boss: ['enabled', ...COMBAT, 'endlessXp', 'attackType'],
-  enemy5: ['enabled', ...COMBAT, 'xp', 'fireInterval'],
+  enemy1: ['enabled', 'spawnChance', ...COMBAT, 'xp', 'attackType'],
+  enemy2: ['enabled', 'spawnChance', ...COMBAT, 'xp', 'attackType'],
+  boss: ['enabled', 'spawnChance', ...COMBAT, 'endlessXp', 'attackType'],
+  enemy5: ['enabled', 'spawnChance', ...COMBAT, 'xp', 'fireInterval'],
   ball: ['size', 'speed', 'damage'],
-  jet: ['enabled', 'size', 'hp', 'speed', 'xp', 'fireInterval'],
+  jet: ['enabled', 'spawnChance', 'size', 'hp', 'speed', 'xp', 'fireInterval'],
   missile: ['size', 'speed', 'damage'],
-  rocketeer: ['enabled', 'size', 'hp', 'xp', 'fireInterval'],
+  rocketeer: ['enabled', 'spawnChance', 'size', 'hp', 'xp', 'fireInterval'],
   rocket: ['size', 'speed', 'damage'],
 };
 
@@ -78,6 +78,10 @@ const REGULAR_ENEMIES = ['enemy1', 'enemy2', 'enemy5'];
 
 export const CHARACTER_FIELDS = {
   enabled: { label: 'On this map', boolean: true },
+  spawnChance: {
+    label: 'Spawn chance (0 to 1)', min: 0, max: 1, step: 0.001,
+    roleLabels: { boss: 'Spawn chance in Endless mode (0 to 1)', rocketeer: 'Chance a map area has a bus (0 to 1)' },
+  },
   size: { label: 'Size (px)', min: 16, max: 220, step: 1 },
   hp: { label: 'Health', min: 1, max: 100000, step: 1 },
   speed: { label: 'Speed', min: 0, max: 800, step: 1 },
@@ -109,22 +113,11 @@ export const GAMEPLAY_FIELDS = {
   upgradeFireRate: { label: 'Fire rate upgrade (% faster)', min: 1, max: 1000, step: 1 },
 };
 
-// Set per map. Whatever chance is left over after Enemy 1 and Enemy 5 goes to Enemy 2.
-const SPAWN_FIELDS = {
+// Set per map. How likely each character is lives on the character itself, as `spawnChance`.
+export const SPAWN_FIELDS = {
   spawnInterval: { label: 'Seconds between enemy spawns', min: 0.1, max: 20, step: 0.05 },
   maxEnemies: { label: 'Most enemies at once', min: 1, max: 120, step: 1 },
-  enemy1Chance: { label: 'Chance a spawn is Enemy 1 (0 to 1)', min: 0, max: 1, step: 0.01 },
-  enemy5Chance: { label: 'Chance a spawn is Enemy 5 (0 to 1)', min: 0, max: 1, step: 0.01 },
-  jetChance: { label: 'Chance a spawn is the Su-34 (0 to 1)', min: 0, max: 1, step: 0.001 },
-  bossChance: { label: 'Chance a spawn is the boss in Endless mode (0 to 1)', min: 0, max: 1, step: 0.001 },
 };
-
-const BUS_SPAWN_FIELD = { busChance: { label: 'Rocketeer buses: chance per map area (0 to 1)', min: 0, max: 1, step: 0.01 } };
-
-/** The spawn settings one map has. */
-export const spawnFields = (mapId) => (mapId === BUS_MAP ? { ...SPAWN_FIELDS, ...BUS_SPAWN_FIELD } : SPAWN_FIELDS);
-
-export const SPAWN_KEYS = [...Object.keys(SPAWN_FIELDS), ...Object.keys(BUS_SPAWN_FIELD)];
 
 export const SITE_TEXT_FIELDS = {
   title: { label: 'Game title', max: 60, required: true },
@@ -181,8 +174,7 @@ const NAMES = {
   },
 };
 
-const DEFAULT_SPAWNS = { spawnInterval: 1.15, maxEnemies: 36, enemy1Chance: 0.14, enemy5Chance: 0.04, jetChance: 0.015, bossChance: 0.005 };
-const DEFAULT_BUS_CHANCE = 0.2;
+const DEFAULT_SPAWNS = { spawnInterval: 1.15, maxEnemies: 36 };
 
 const DEFAULT_SIGNS = ['TURN BACK', 'NO SIGNAL', 'LAST BUS LEFT YEARS AGO', 'DO NOT FEED THE ROCKETEERS', 'NOTHING AHEAD'];
 
@@ -192,14 +184,14 @@ function defaultCharacters(map) {
     player: { name: names.player, sprite: null, size: 46, hp: 100, speed: 255, damage: 18, fireInterval: 0.26 },
     companion: { name: names.companion, sprite: null, enabled: true, size: 40, hp: 80, speed: 285, damage: 10, fireInterval: 0.4 },
     hostage: { name: names.hostage, sprite: null, size: 44 },
-    enemy1: { name: names.enemy1, sprite: null, enabled: true, size: 62, hp: 130, speed: 135, damage: 20, xp: 40, attackType: 'melee' },
-    enemy2: { name: names.enemy2, sprite: null, enabled: true, size: 36, hp: 32, speed: 180, damage: 8, xp: 10, attackType: 'melee' },
-    boss: { name: names.boss, sprite: null, enabled: true, size: 118, hp: 1500, speed: 120, damage: 13, endlessXp: 500, attackType: 'pump' },
-    enemy5: { name: names.enemy5, sprite: null, enabled: true, size: 96, hp: 650, speed: 90, damage: 30, xp: 150, fireInterval: 3 },
+    enemy1: { name: names.enemy1, sprite: null, enabled: true, spawnChance: 0.14, size: 62, hp: 130, speed: 135, damage: 20, xp: 40, attackType: 'melee' },
+    enemy2: { name: names.enemy2, sprite: null, enabled: true, spawnChance: 0.82, size: 36, hp: 32, speed: 180, damage: 8, xp: 10, attackType: 'melee' },
+    boss: { name: names.boss, sprite: null, enabled: true, spawnChance: 0.005, size: 118, hp: 1500, speed: 120, damage: 13, endlessXp: 500, attackType: 'pump' },
+    enemy5: { name: names.enemy5, sprite: null, enabled: true, spawnChance: 0.04, size: 96, hp: 650, speed: 90, damage: 30, xp: 150, fireInterval: 3 },
     ball: { sprite: null, size: 92, speed: 260, damage: 35 },
-    jet: { name: names.jet, sprite: null, enabled: true, size: 120, hp: 260, speed: 430, xp: 100, fireInterval: 1.4 },
+    jet: { name: names.jet, sprite: null, enabled: true, spawnChance: 0.015, size: 120, hp: 260, speed: 430, xp: 100, fireInterval: 1.4 },
     missile: { sprite: null, size: 46, speed: 300, damage: 40 },
-    rocketeer: { name: names.rocketeer, sprite: null, enabled: true, size: 54, hp: 140, xp: 60, fireInterval: 3.2 },
+    rocketeer: { name: names.rocketeer, sprite: null, enabled: true, spawnChance: 0.2, size: 54, hp: 140, xp: 60, fireInterval: 3.2 },
     rocket: { sprite: null, size: 42, speed: 260, damage: 28 },
   };
   const result = {};
@@ -242,7 +234,7 @@ export function defaultConfig() {
     maps: Object.fromEntries(MAPS.map((map) => [map, {
       name: NAMES[map].map,
       characters: defaultCharacters(map),
-      spawns: { ...DEFAULT_SPAWNS, ...(map === BUS_MAP ? { busChance: DEFAULT_BUS_CHANCE } : {}) },
+      spawns: { ...DEFAULT_SPAWNS },
       ...(hasSigns(map) ? { signs: [...DEFAULT_SIGNS] } : {}),
     }])),
     gameplay: {
@@ -309,12 +301,11 @@ function readNumber(value, path, spec, errors) {
   return value;
 }
 
-function readSpawns(input, mapId, path, errors) {
+function readSpawns(input, path, errors) {
   const spawns = isObject(input) ? input : {};
   if (!isObject(input)) errors.push(`${path}: is required`);
-  const fields = spawnFields(mapId);
-  checkKeys(spawns, Object.keys(fields), path, errors);
-  return Object.fromEntries(Object.entries(fields).map(([key, spec]) => [key, readNumber(spawns[key], `${path}.${key}`, spec, errors)]));
+  checkKeys(spawns, Object.keys(SPAWN_FIELDS), path, errors);
+  return Object.fromEntries(Object.entries(SPAWN_FIELDS).map(([key, spec]) => [key, readNumber(spawns[key], `${path}.${key}`, spec, errors)]));
 }
 
 function readSigns(input, path, errors) {
@@ -360,8 +351,8 @@ function readCharacters(input, mapId, path, errors) {
     out[role] = clean;
   }
   // Direction hints come from kills, so a map with nothing to kill could never be finished.
-  if (!REGULAR_ENEMIES.some((role) => out[role].enabled !== false)) {
-    errors.push(`${path}: keep at least one of Enemy 1, Enemy 2 or Enemy 5 on`);
+  if (!REGULAR_ENEMIES.some((role) => out[role].enabled !== false && out[role].spawnChance > 0)) {
+    errors.push(`${path}: keep at least one of Enemy 1, Enemy 2 or Enemy 5 on, with a spawn chance above 0`);
   }
   return out;
 }
@@ -431,7 +422,7 @@ export function validateConfig(input) {
     value.maps[mapId] = {
       name: readText(map.name, `${path}.name`, MAX_MAP_NAME_LENGTH, true, errors),
       characters: readCharacters(map.characters, mapId, `${path}.characters`, errors),
-      spawns: readSpawns(map.spawns, mapId, `${path}.spawns`, errors),
+      spawns: readSpawns(map.spawns, `${path}.spawns`, errors),
     };
     if (hasSigns(mapId)) value.maps[mapId].signs = readSigns(map.signs, `${path}.signs`, errors);
   }

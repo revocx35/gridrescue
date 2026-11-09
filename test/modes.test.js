@@ -282,7 +282,7 @@ describe('wasteland obstacles', () => {
   });
 
   it('follows the bus chance', () => {
-    const edit = (value) => (c) => { c.gameplay.busChance = value; };
+    const edit = (value) => (c) => { c.characters.rocketeer.spawnChance = value; };
     assert.equal(collect(1, 'bus', 6000, edit(0)).items.length, 0);
     assert.ok(collect(1, 'bus', 6000, edit(0.9)).items.length > collect(1, 'bus', 6000, edit(0.1)).items.length);
   });
@@ -319,6 +319,71 @@ describe('spawn rates per map', () => {
     assert.notEqual(config.maps.grid.spawns.spawnInterval, 9);
   });
 
+  const mix = (edit, seconds = 400) => {
+    const cfg = mapConfig(defaultConfig(), 'grid');
+    cfg.characters.jet.enabled = false;
+    cfg.gameplay.maxEnemies = 1e6;
+    cfg.gameplay.spawnInterval = 0.1;
+    cfg.characters.player.damage = 0;
+    edit(cfg.characters);
+    const s = createGame(cfg, { rng: seeded(11) });
+    s.time = 100;
+    s.player.hp = s.player.maxHp = 1e12;
+    s.player.cool = 1e9;
+    const counts = {};
+    for (let i = 0; i < 60 * seconds; i++) {
+      step(s, DT, still);
+      for (const e of s.enemies) counts[e.kind] = (counts[e.kind] ?? 0) + 1;
+      s.enemies.length = 0;
+    }
+    return counts;
+  };
+
+  it('shares spawns in proportion to each character\'s chance', () => {
+    const counts = mix((c) => { c.enemy1.spawnChance = 0.3; c.enemy2.spawnChance = 0.6; c.enemy5.spawnChance = 0.1; });
+    const total = counts.enemy1 + counts.enemy2 + counts.enemy5;
+    assert.ok(Math.abs(counts.enemy1 / total - 0.3) < 0.05, JSON.stringify(counts));
+    assert.ok(Math.abs(counts.enemy2 / total - 0.6) < 0.05, JSON.stringify(counts));
+    assert.ok(Math.abs(counts.enemy5 / total - 0.1) < 0.05, JSON.stringify(counts));
+  });
+
+  it('never spawns a character whose chance is zero', () => {
+    const counts = mix((c) => { c.enemy2.spawnChance = 0; c.enemy1.spawnChance = 0.4; });
+    assert.equal(counts.enemy2, undefined);
+    assert.ok(counts.enemy1 > 0);
+  });
+
+  it('keeps spawning when the chances add up to less or more than 1', () => {
+    const low = mix((c) => { c.enemy1.spawnChance = 0.05; c.enemy2.spawnChance = 0.05; c.enemy5.spawnChance = 0; });
+    const high = mix((c) => { c.enemy1.spawnChance = 1; c.enemy2.spawnChance = 1; c.enemy5.spawnChance = 1; });
+    const sum = (counts) => Object.values(counts).reduce((a, b) => a + b, 0);
+    assert.ok(Math.abs(sum(low) - sum(high)) / sum(high) < 0.05);
+  });
+
+  it('gives a switched-off enemy\'s share to the others', () => {
+    const counts = mix((c) => { c.enemy2.enabled = false; });
+    assert.equal(counts.enemy2, undefined);
+    assert.ok(counts.enemy1 > counts.enemy5);
+  });
+
+  it('spawns nothing when no enabled enemy has a chance', () => {
+    const counts = mix((c) => { c.enemy1.spawnChance = 0; c.enemy2.spawnChance = 0; c.enemy5.spawnChance = 0; });
+    assert.deepEqual(counts, {});
+  });
+
+  it('uses the Rocketeer\'s chance for buses', () => {
+    const buses = (value) => {
+      const cfg = mapConfig(defaultConfig(), 'wasteland');
+      cfg.characters.rocketeer.spawnChance = value;
+      const s = createGame(cfg, { rng: seeded(2) });
+      let n = 0;
+      forEachItemIn(s.world, -6000, -6000, 6000, 6000, (item) => { if (item.kind === 'bus') n += 1; });
+      return n;
+    };
+    assert.equal(buses(0), 0);
+    assert.ok(buses(0.8) > buses(0.1));
+  });
+
   it('really changes the pace of a game', () => {
     const count = (interval) => {
       const cfg = mapConfig(defaultConfig(), 'grid');
@@ -331,11 +396,13 @@ describe('spawn rates per map', () => {
     assert.ok(count(0.4) > count(4));
   });
 
-  rejected('a chance over 1', (c) => { c.maps.forest.spawns.jetChance = 1.5; });
-  rejected('a negative chance', (c) => { c.maps.grid.spawns.enemy1Chance = -0.1; });
+  rejected('a chance over 1', (c) => { c.maps.forest.characters.jet.spawnChance = 1.5; });
+  rejected('a negative chance', (c) => { c.maps.grid.characters.enemy1.spawnChance = -0.1; });
   rejected('a zero spawn interval', (c) => { c.maps.grid.spawns.spawnInterval = 0; });
   rejected('a missing spawn panel', (c) => { delete c.maps.grid.spawns; });
-  rejected('a bus chance on a map without buses', (c) => { c.maps.grid.spawns.busChance = 0.5; });
+  rejected('a chance on a character that does not spawn', (c) => { c.maps.grid.characters.player.spawnChance = 0.5; });
+  rejected('a chance left in the per-map panel', (c) => { c.maps.grid.spawns.jetChance = 0.5; });
+  rejected('no regular enemy with any chance of spawning', (c) => { for (const role of ['enemy1', 'enemy2', 'enemy5']) c.maps.grid.characters[role].spawnChance = 0; });
   rejected('spawn settings in the old shared place', (c) => { c.gameplay.spawnInterval = 1; });
 });
 
@@ -449,7 +516,7 @@ describe('endless mode', () => {
     assert.equal(early.enemies.some((e) => e.kind === 'boss'), false);
 
     const none = createGame(mapConfig(defaultConfig(), 'grid'), { rng: () => 0.001, mode: 'endless' });
-    none.cfg.gameplay.bossChance = 0;
+    none.cfg.characters.boss.spawnChance = 0;
     none.time = 61;
     none.spawnT = 0;
     step(none, DT, still);

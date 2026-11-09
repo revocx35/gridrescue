@@ -38,7 +38,7 @@ compose.yaml, Dockerfile           Hardened deployment
 
 ```sh
 npm ci                        # install
-npm test                      # all tests (356): rules, modes, editor, PNG, audio, auth, real OIDC client against a local issuer
+npm test                      # all tests (367): rules, modes, editor, PNG, audio, auth, real OIDC client against a local issuer
 npm start                     # plain HTTP unless TLS_* is set; needs PUBLIC_URL for sign-in
 scripts/setup.sh IP:x.x.x.x   # once per checkout
 docker compose up -d --build  # deploy
@@ -64,9 +64,9 @@ docker compose up -d --build  # deploy
   chunk: the lookups depend on it.
 - Sprites only change through `/api/admin/sprites/:map/:role` and sounds through `/api/admin/sounds/:map/:role/:slot`.
   `PUT /api/admin/config` rejects `sprite` and `sounds` keys on purpose.
-- Spawn settings live per map in `maps.<id>.spawns` (`spawnFields` in `schema.js`), and the admin edits them in the Characters tab beside the map switch. `mapConfig`
-  merges them into `gameplay`, so rules keep reading `s.cfg.gameplay.spawnInterval`. Never add them back to `GAMEPLAY_FIELDS`: `Store.upgrade` moves old shared values
-  onto every map and strips them from `gameplay`.
+- Pacing lives per map in `maps.<id>.spawns` (`SPAWN_FIELDS`: interval and cap), which `mapConfig` merges into `gameplay`. How likely each character is lives on the character as
+  `spawnChance` (Rocketeer: chance a map area has a bus). `Store.upgrade` moves both older forms (shared `gameplay`, then per-map chances) and strips the old keys, so never
+  add them back. Regular enemies are picked in proportion to their chances, so these need not add up to 1; the Su-34 and Endless boss are separate rolls first.
 - Use `mapRoles(mapId)`, not `ROLES`, when walking one map's characters: `rocketeer` and `rocket` exist on the wasteland only.
 - A sound slot is declared in `SOUND_SLOTS` only. There are no built-in sounds and there must never be: an empty slot is silent.
 - Rules emit `shot` and `kamikaze` events with a `role`. Audio lives in `sound.js` and reacts to those; `sim.js` knows nothing about sound.

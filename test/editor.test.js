@@ -293,7 +293,7 @@ describe('config upgrades', () => {
     assert.equal(enemy5.fireInterval, 3);
     assert.equal(enemy5.enabled, true);
     assert.equal(ball.sprite, null);
-    assert.equal(config.maps.grid.spawns.enemy5Chance, defaultConfig().maps.grid.spawns.enemy5Chance);
+    assert.equal(config.maps.grid.characters.enemy5.spawnChance, defaultConfig().maps.grid.characters.enemy5.spawnChance);
   });
 
   it('gives the new map its own default cast, without the old images', async () => {

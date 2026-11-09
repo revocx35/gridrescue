@@ -2,7 +2,7 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { MAPS, NAMED_ROLES, ROLE_FIELDS, SOUND_FILE, SOUND_SLOTS, SPAWN_KEYS, SPRITE_HASH, defaultConfig, hasSigns, mapRoles, spawnFields, validateConfig } from '../public/js/schema.js';
+import { MAPS, NAMED_ROLES, ROLE_FIELDS, SOUND_FILE, SOUND_SLOTS, SPAWN_FIELDS, SPRITE_HASH, defaultConfig, hasSigns, mapRoles, validateConfig } from '../public/js/schema.js';
 
 export function writeAtomic(file, data) {
   const tmp = `${file}.${crypto.randomBytes(6).toString('hex')}.tmp`;
@@ -43,10 +43,25 @@ function mapsFromFlatConfig(stored) {
   return { [MAPS[0]]: { characters } };
 }
 
-/** Spawn settings used to be shared, so a value still in the old place applies to every map. */
-function upgradedSpawns(mapId, base, stored, map) {
-  const shared = Object.fromEntries(Object.keys(spawnFields(mapId)).filter((key) => key in (stored.gameplay ?? {})).map((key) => [key, stored.gameplay[key]]));
-  return { ...base.maps[mapId].spawns, ...shared, ...map?.spawns };
+// Where each character's spawn chance was kept before it moved onto the character.
+const OLD_CHANCE_KEYS = { enemy1: 'enemy1Chance', enemy5: 'enemy5Chance', jet: 'jetChance', boss: 'bossChance', rocketeer: 'busChance' };
+const OLD_SPAWN_KEYS = [...Object.values(OLD_CHANCE_KEYS), ...Object.keys(SPAWN_FIELDS)];
+
+/** Spawn settings were first shared, then per map. Newer places win, so a value still in an old one applies to every map. */
+function oldSpawnSettings(stored, map) {
+  const settings = { ...stored.gameplay, ...map?.spawns };
+  return Object.fromEntries(OLD_SPAWN_KEYS.filter((key) => key in settings).map((key) => [key, settings[key]]));
+}
+
+/** The chances to give a map's characters. Enemy 2 used to get whatever Enemy 1 and Enemy 5 left over. */
+function oldChances(old, baseCharacters) {
+  const chances = {};
+  for (const [role, key] of Object.entries(OLD_CHANCE_KEYS)) if (key in old) chances[role] = old[key];
+  if ('enemy1' in chances || 'enemy5' in chances) {
+    const taken = (chances.enemy1 ?? baseCharacters.enemy1.spawnChance) + (chances.enemy5 ?? baseCharacters.enemy5.spawnChance);
+    chances.enemy2 = Math.max(0, Math.round((1 - taken) * 1000) / 1000);
+  }
+  return chances;
 }
 
 /** Fills fields added by newer versions with their defaults. */
@@ -61,11 +76,17 @@ function upgrade(stored) {
   for (const mapId of MAPS) {
     const map = storedMaps[mapId];
     const characters = {};
-    for (const role of mapRoles(mapId)) characters[role] = { ...base.maps[mapId].characters[role], ...map?.characters?.[role] };
-    merged.maps[mapId] = { name: map?.name ?? base.maps[mapId].name, characters, spawns: upgradedSpawns(mapId, base, stored, map) };
+    const old = oldSpawnSettings(stored, map);
+    const chances = oldChances(old, base.maps[mapId].characters);
+    for (const role of mapRoles(mapId)) {
+      const moved = role in chances ? { spawnChance: chances[role] } : {};
+      characters[role] = { ...base.maps[mapId].characters[role], ...moved, ...map?.characters?.[role] };
+    }
+    const spawns = Object.fromEntries(Object.keys(SPAWN_FIELDS).map((key) => [key, old[key] ?? base.maps[mapId].spawns[key]]));
+    merged.maps[mapId] = { name: map?.name ?? base.maps[mapId].name, characters, spawns };
     if (hasSigns(mapId)) merged.maps[mapId].signs = map?.signs ?? base.maps[mapId].signs;
   }
-  for (const key of SPAWN_KEYS) delete merged.gameplay[key];
+  for (const key of OLD_SPAWN_KEYS) delete merged.gameplay[key];
   // Before there were two joysticks the single one could be centred.
   if (merged.site.joystickSide === 'center') merged.site.joystickSide = 'left';
   return merged;

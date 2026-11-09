@@ -64,7 +64,7 @@ export function scoreLimits(cfg) {
 /** Rocketeers come on top of the spawn pacing: this bounds how many buses a player can run past per second. */
 function busKillRate(cfg) {
   if (cfg.mapId !== 'wasteland' || !cfg.characters.rocketeer.enabled) return 0;
-  return (cfg.characters.player.speed * WIDEST_VIEW * cfg.gameplay.busChance) / CHUNK_SIZE ** 2;
+  return (cfg.characters.player.speed * WIDEST_VIEW * cfg.characters.rocketeer.spawnChance) / CHUNK_SIZE ** 2;
 }
 
 /** The arena and the start stay open so a fight is never decided by where an obstacle landed. */
@@ -73,7 +73,7 @@ function createWorld(cfg, rng, hostage, arena) {
   const clearings = [{ x: 0, y: 0, r: START_CLEARING }];
   if (hostage) clearings.push({ x: hostage.x, y: hostage.y, r: arena + 60 });
   const seed = Math.floor(rng() * 2 ** 31);
-  return cfg.mapId === 'forest' ? createForest(seed, clearings) : createWasteland(seed, clearings, cfg.gameplay.busChance);
+  return cfg.mapId === 'forest' ? createForest(seed, clearings) : createWasteland(seed, clearings, cfg.characters.rocketeer.spawnChance);
 }
 
 /** view is the half-size of the visible world, kept current by the renderer. mode is 'rescue' or 'endless'. */
@@ -295,24 +295,26 @@ function spawnEnemy(s) {
 function shouldSpawnEndlessBoss(s) {
   if (s.mode !== 'endless' || !s.cfg.characters.boss.enabled || s.time < ENDLESS_BOSS_EARLIEST) return false;
   if (s.enemies.some((e) => e.kind === 'boss')) return false;
-  return s.rng() < s.cfg.gameplay.bossChance;
+  return s.rng() < s.cfg.characters.boss.spawnChance;
 }
 
 function shouldSpawnJet(s) {
   if (!s.cfg.characters.jet.enabled || s.time < JET_EARLIEST || s.enemies.some((e) => e.kind === 'jet')) return false;
-  return s.rng() < s.cfg.gameplay.jetChance;
+  return s.rng() < s.cfg.characters.jet.spawnChance;
 }
 
+/** Every spawn is one of the regular enemies, in proportion to their chances. A switched-off enemy's share goes to the rest. */
 function chooseEnemyKind(s) {
   const c = s.cfg.characters;
-  const g = s.cfg.gameplay;
-  const enemy5Ready = c.enemy5.enabled && s.time >= ENEMY5_EARLIEST;
-  const roll = s.rng();
-  if (enemy5Ready && roll < g.enemy5Chance) return 'enemy5';
-  if (c.enemy1.enabled && roll < g.enemy5Chance + g.enemy1Chance) return 'enemy1';
-  if (c.enemy2.enabled) return 'enemy2';
-  if (c.enemy1.enabled) return 'enemy1';
-  return enemy5Ready ? 'enemy5' : null;
+  const pool = ['enemy5', 'enemy1', 'enemy2'].filter((kind) => c[kind].enabled && c[kind].spawnChance > 0 && (kind !== 'enemy5' || s.time >= ENEMY5_EARLIEST));
+  const total = pool.reduce((sum, kind) => sum + c[kind].spawnChance, 0);
+  if (!total) return null;
+  let roll = s.rng() * total;
+  for (const kind of pool) {
+    roll -= c[kind].spawnChance;
+    if (roll < 0) return kind;
+  }
+  return pool.at(-1);
 }
 
 /** A new enemy at the current difficulty level. */

@@ -44,7 +44,7 @@ are deleted on every commit. A monotonically increasing `revision` gives optimis
   expire after 8 seconds, and are ignored by bullets and auto-aim. Only a click or tap on one destroys it, which gives no kill
   and no XP.
 - The hostage is placed at a random angle, 85 to 115% of `hostageDistance` from the start.
-- Spawn settings belong to each map (`maps.<id>.spawns`): interval, cap and the chance of each kind, and on the wasteland how many map areas have a bus. `mapConfig` merges them into the rules a game runs with.
+- Each map sets its own pacing (seconds between spawns, most enemies at once), and each character its own `spawnChance`. A spawn first rolls for the Su-34 and, in Endless, the boss. Otherwise it picks Enemy 1, 2 or 5 in proportion to their chances, ignoring any that are off or not yet allowed, so a spawn is never wasted. On the wasteland the Rocketeer's chance is how many map areas have a bus.
 - Enemies appear just outside the view at intervals that shorten over time. Enemy 1 is a weighted rarity
   (`enemy1Chance`) with more health and damage. Enemy 5 is rarer still (`enemy5Chance`) and cannot appear in the first 40
   seconds. It walks like a melee enemy and every `fireInterval` seconds locks a line for half a second, then throws a ball

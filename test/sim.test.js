@@ -392,7 +392,7 @@ describe('enemy attack types', () => {
   });
 
   it('spawned enemies use the attack type set by the admin', () => {
-    const s = game(3, (c) => { c.characters.enemy2.attackType = 'sniper'; c.gameplay.enemy1Chance = 0; c.gameplay.enemy5Chance = 0; c.gameplay.jetChance = 0; });
+    const s = game(3, (c) => { c.characters.enemy2.attackType = 'sniper'; c.characters.enemy1.spawnChance = 0; c.characters.enemy5.spawnChance = 0; c.characters.jet.spawnChance = 0; });
     s.spawnT = 0;
     step(s, DT, still);
     assert.equal(s.enemies[0].attack, 'sniper');
@@ -743,11 +743,11 @@ describe('enemy 5', () => {
     for (const { characters: c } of Object.values(maps)) {
       assert.ok(c.enemy5.hp > c.enemy1.hp && c.enemy5.damage > c.enemy1.damage);
     }
-    assert.ok(maps.grid.spawns.enemy5Chance < maps.grid.spawns.enemy1Chance);
+    assert.ok(maps.grid.characters.enemy5.spawnChance < maps.grid.characters.enemy1.spawnChance);
   });
 
   it('spawns with its chance, ready to throw', () => {
-    const s = game(3, (c) => { c.gameplay.enemy1Chance = 0; c.gameplay.enemy5Chance = 1; });
+    const s = game(3, (c) => { c.characters.enemy1.spawnChance = 0; c.characters.enemy2.spawnChance = 0; c.characters.enemy5.spawnChance = 1; });
     s.time = 41;
     s.spawnT = 0;
     step(s, DT, still);
@@ -757,7 +757,7 @@ describe('enemy 5', () => {
   });
 
   it('does not appear in the opening of a run', () => {
-    const s = game(3, (c) => { c.gameplay.enemy5Chance = 1; });
+    const s = game(3, (c) => { c.characters.enemy5.spawnChance = 1; });
     s.spawnT = 0;
     step(s, DT, still);
     assert.notEqual(s.enemies[0].kind, 'enemy5');
@@ -938,7 +938,7 @@ describe('maps', () => {
   it('a simple bot can finish the forest map, so it is winnable', () => {
     let wins = 0;
     const results = [];
-    for (let seed = 1; seed <= 12; seed++) {
+    for (let seed = 1; seed <= 40; seed++) { // this bot wins about 3 games in 10, so a few seeds prove little
       const s = forest(seed * 37);
       let frames = 0;
       const picks = ['damage', 'companion', 'health', 'pierce'];
@@ -951,7 +951,7 @@ describe('maps', () => {
       results.push(`${s.status}:${Math.round(s.time)}s/${s.kills}k`);
       if (s.status === 'won') wins += 1;
     }
-    assert.ok(wins >= 3, results.join(' '));
+    assert.ok(wins >= 6, results.join(' '));
     console.log('forest bot results', results.join(' '));
   });
 });
@@ -973,12 +973,12 @@ describe('turning characters off', () => {
 
   for (const kind of ['enemy1', 'enemy2', 'enemy5', 'jet']) {
     it(`never spawns ${kind} when it is off`, () => {
-      assert.equal(spawnKinds((c) => { c.characters[kind].enabled = false; c.gameplay.jetChance = 0.2; c.gameplay.enemy5Chance = 0.2; c.gameplay.enemy1Chance = 0.2; }).has(kind), false);
+      assert.equal(spawnKinds((c) => { c.characters[kind].enabled = false; c.characters.jet.spawnChance = 0.2; c.characters.enemy5.spawnChance = 0.2; c.characters.enemy1.spawnChance = 0.2; }).has(kind), false);
     });
   }
 
   it('still spawns when only the rare enemy is left on', () => {
-    const seen = spawnKinds((c) => { c.characters.enemy2.enabled = false; c.characters.enemy5.enabled = false; c.gameplay.enemy1Chance = 0.01; });
+    const seen = spawnKinds((c) => { c.characters.enemy2.enabled = false; c.characters.enemy5.enabled = false; c.characters.enemy1.spawnChance = 0.01; });
     assert.ok(seen.has('enemy1'));
   });
 
@@ -1016,7 +1016,8 @@ describe('difficulty levels', () => {
     for (let i = 0; i < 60 && s.enemies.includes(e); i++) step(s, DT, still);
   };
   const spawn = (s, kind, chance) => {
-    s.cfg.gameplay.enemy1Chance = chance;
+    s.cfg.characters.enemy1.spawnChance = chance;
+    s.cfg.characters.enemy2.spawnChance = 1 - chance;
     s.spawnT = 0;
     step(s, DT, still);
     s.spawnT = 1e9;
@@ -1034,7 +1035,7 @@ describe('difficulty levels', () => {
   });
 
   it('new enemies gain health, damage and XP, but no speed or size', () => {
-    const s = quiet((c) => { c.gameplay.jetChance = 0; c.gameplay.enemy5Chance = 0; });
+    const s = quiet((c) => { c.characters.jet.spawnChance = 0; c.characters.enemy5.spawnChance = 0; });
     s.level = 3;
     const ch = s.cfg.characters.enemy1;
     const e = spawn(s, 'enemy1', 1);
@@ -1064,7 +1065,7 @@ describe('difficulty levels', () => {
   });
 
   it('an increase of zero changes nothing', () => {
-    const s = quiet((c) => { c.gameplay.difficultyIncrease = 0; c.gameplay.jetChance = 0; c.gameplay.enemy5Chance = 0; });
+    const s = quiet((c) => { c.gameplay.difficultyIncrease = 0; c.characters.jet.spawnChance = 0; c.characters.enemy5.spawnChance = 0; });
     s.level = 9;
     assert.equal(spawn(s, 'enemy1', 1).maxHp, s.cfg.characters.enemy1.hp);
   });
@@ -1072,7 +1073,7 @@ describe('difficulty levels', () => {
 
 describe('Su-34 and Kh-29', () => {
   function withJet(edit) {
-    const s = game(1, (c) => { c.gameplay.jetChance = 1; edit?.(c); });
+    const s = game(1, (c) => { c.characters.jet.spawnChance = 1; edit?.(c); });
     s.time = 61;
     s.spawnT = 0;
     s.cfg.characters.player.damage = 0;
@@ -1092,9 +1093,9 @@ describe('Su-34 and Kh-29', () => {
   };
 
   it('is very rare and never in the opening of a run', () => {
-    const { spawns } = defaultConfig().maps.grid;
-    assert.ok(spawns.jetChance < spawns.enemy5Chance);
-    const s = game(1, (c) => { c.gameplay.jetChance = 1; });
+    const { characters } = defaultConfig().maps.grid;
+    assert.ok(characters.jet.spawnChance < characters.enemy5.spawnChance);
+    const s = game(1, (c) => { c.characters.jet.spawnChance = 1; });
     s.spawnT = 0;
     step(s, DT, still);
     assert.equal(s.enemies.some((e) => e.kind === 'jet'), false);

@@ -224,34 +224,75 @@ describe('sound uploads', () => {
     assert.deepEqual(reopened.snapshot().config.maps.grid.characters.enemy1.sounds, { shoot: `${'a'.repeat(64)}.mp3` });
   });
 
-  it('moves shared spawn settings onto every map', () => {
-    const stored = ctx.store.snapshot();
-    for (const map of Object.values(stored.config.maps)) delete map.spawns;
-    Object.assign(stored.config.gameplay, { spawnInterval: 0.5, maxEnemies: 50, enemy1Chance: 0.3, enemy5Chance: 0.1, jetChance: 0.2, bossChance: 0.04 });
+  const reload = (stored) => {
     fs.writeFileSync(path.join(ctx.dir, 'config.json'), JSON.stringify(stored));
-    const { config } = new Store(ctx.dir, { error() {} }).snapshot();
-    assert.equal(fs.readdirSync(ctx.dir).some((name) => name.includes('.corrupt-')), false);
+    const state = new Store(ctx.dir, { error() {} }).snapshot();
+    assert.equal(fs.readdirSync(ctx.dir).some((name) => name.includes('.corrupt-')), false, 'config was thrown away');
+    return state.config;
+  };
+  const withoutChances = (stored) => {
+    for (const map of Object.values(stored.config.maps)) for (const ch of Object.values(map.characters)) delete ch.spawnChance;
+  };
+
+  it('moves shared spawn settings onto every map and its characters', () => {
+    const stored = ctx.store.snapshot();
+    withoutChances(stored);
+    for (const map of Object.values(stored.config.maps)) delete map.spawns;
+    Object.assign(stored.config.gameplay, { spawnInterval: 0.5, maxEnemies: 50, enemy1Chance: 0.24, enemy5Chance: 0.04, jetChance: 0.2, bossChance: 0.04 });
+    const config = reload(stored);
     for (const map of Object.values(config.maps)) {
       assert.equal(map.spawns.spawnInterval, 0.5);
       assert.equal(map.spawns.maxEnemies, 50);
-      assert.equal(map.spawns.bossChance, 0.04);
+      assert.deepEqual(Object.keys(map.spawns).sort(), ['maxEnemies', 'spawnInterval']);
+      assert.equal(map.characters.enemy1.spawnChance, 0.24);
+      assert.equal(map.characters.enemy2.spawnChance, 0.72);
+      assert.equal(map.characters.enemy5.spawnChance, 0.04);
+      assert.equal(map.characters.jet.spawnChance, 0.2);
+      assert.equal(map.characters.boss.spawnChance, 0.04);
     }
-    assert.equal(config.maps.wasteland.spawns.busChance, defaultConfig().maps.wasteland.spawns.busChance);
+    assert.equal(config.maps.wasteland.characters.rocketeer.spawnChance, defaultConfig().maps.wasteland.characters.rocketeer.spawnChance);
     assert.equal('spawnInterval' in config.gameplay, false);
-    assert.equal('busChance' in config.maps.grid.spawns, false);
+    assert.equal('jetChance' in config.gameplay, false);
+  });
+
+  it('moves per-map chances onto that map\'s characters', () => {
+    const stored = ctx.store.snapshot();
+    withoutChances(stored);
+    Object.assign(stored.config.maps.forest.spawns, { enemy1Chance: 0.5, enemy5Chance: 0.1, jetChance: 0.3, bossChance: 0.02 });
+    Object.assign(stored.config.maps.wasteland.spawns, { busChance: 0.6 });
+    const config = reload(stored);
+    assert.equal(config.maps.forest.characters.enemy1.spawnChance, 0.5);
+    assert.equal(config.maps.forest.characters.enemy2.spawnChance, 0.4);
+    assert.equal(config.maps.wasteland.characters.rocketeer.spawnChance, 0.6);
+    assert.equal(config.maps.grid.characters.enemy1.spawnChance, defaultConfig().maps.grid.characters.enemy1.spawnChance);
+    assert.equal('busChance' in config.maps.wasteland.spawns, false);
+  });
+
+  it('never gives Enemy 2 a negative chance when the old ones added up to more than 1', () => {
+    const stored = ctx.store.snapshot();
+    withoutChances(stored);
+    Object.assign(stored.config.maps.grid.spawns, { enemy1Chance: 0.9, enemy5Chance: 0.5 });
+    assert.equal(reload(stored).maps.grid.characters.enemy2.spawnChance, 0);
+  });
+
+  it('leaves a chance already on the character alone', () => {
+    const stored = ctx.store.snapshot();
+    stored.config.maps.grid.characters.enemy1.spawnChance = 0.77;
+    Object.assign(stored.config.maps.grid.spawns, { enemy1Chance: 0.1 });
+    assert.equal(reload(stored).maps.grid.characters.enemy1.spawnChance, 0.77);
   });
 
   it('keeps each map\'s spawn settings through a save and a restart', async () => {
     const { config, revision } = ctx.store.snapshot();
     for (const map of Object.values(config.maps)) for (const ch of Object.values(map.characters)) { delete ch.sprite; delete ch.sounds; }
     config.maps.forest.spawns.spawnInterval = 3;
-    config.maps.wasteland.spawns.busChance = 0.5;
+    config.maps.wasteland.characters.rocketeer.spawnChance = 0.5;
     const res = await ctx.app.inject({ method: 'PUT', url: '/api/admin/config', payload: { revision, config }, ...authed(auth) });
     assert.equal(res.statusCode, 200);
     const reopened = new Store(ctx.dir, { error() {} }).publicConfig();
     assert.equal(reopened.maps.forest.spawns.spawnInterval, 3);
     assert.equal(reopened.maps.grid.spawns.spawnInterval, defaultConfig().maps.grid.spawns.spawnInterval);
-    assert.equal(reopened.maps.wasteland.spawns.busChance, 0.5);
+    assert.equal(reopened.maps.wasteland.characters.rocketeer.spawnChance, 0.5);
   });
 
   it('adds the new map to a config saved before it existed', () => {
@@ -262,7 +303,7 @@ describe('sound uploads', () => {
     fs.writeFileSync(path.join(ctx.dir, 'config.json'), JSON.stringify(stored));
     const { config } = new Store(ctx.dir, { error() {} }).snapshot();
     assert.deepEqual(config.maps.wasteland.signs, defaultConfig().maps.wasteland.signs);
-    assert.equal(config.maps.grid.spawns.bossChance, defaultConfig().maps.grid.spawns.bossChance);
+    assert.equal(config.maps.grid.characters.boss.spawnChance, defaultConfig().maps.grid.characters.boss.spawnChance);
     assert.equal(config.maps.grid.characters.boss.endlessXp, defaultConfig().maps.grid.characters.boss.endlessXp);
     assert.equal('rocketeer' in config.maps.grid.characters, false);
   });
