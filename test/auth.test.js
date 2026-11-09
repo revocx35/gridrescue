@@ -151,7 +151,7 @@ describe('CSRF and origin checks', () => {
   const send = (headers) =>
     ctx.app.inject({
       method: 'DELETE',
-      url: '/api/admin/sprites/player',
+      url: '/api/admin/sprites/grid/player',
       cookies: { '__Host-gr_session': auth.cookie },
       headers,
     });

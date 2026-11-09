@@ -2,7 +2,7 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { ROLES, ROLE_FIELDS, SPRITE_HASH, defaultConfig, validateConfig } from '../public/js/schema.js';
+import { MAPS, NAMED_ROLES, ROLES, ROLE_FIELDS, SPRITE_HASH, defaultConfig, validateConfig } from '../public/js/schema.js';
 
 function writeAtomic(file, data) {
   const tmp = `${file}.${crypto.randomBytes(6).toString('hex')}.tmp`;
@@ -17,23 +17,46 @@ function writeAtomic(file, data) {
 }
 
 function withEditableFields(config) {
-  const characters = {};
-  for (const role of ROLES) {
-    characters[role] = { name: config.characters[role].name };
-    for (const field of ROLE_FIELDS[role]) characters[role][field] = config.characters[role][field];
+  const maps = {};
+  for (const mapId of MAPS) {
+    const characters = {};
+    for (const role of ROLES) {
+      const stored = config.maps[mapId].characters[role];
+      characters[role] = NAMED_ROLES.includes(role) ? { name: stored.name } : {};
+      for (const field of ROLE_FIELDS[role]) characters[role][field] = stored[field];
+    }
+    maps[mapId] = { name: config.maps[mapId].name, characters };
   }
-  return { site: config.site, characters, gameplay: config.gameplay };
+  return { site: config.site, maps, gameplay: config.gameplay };
+}
+
+/** Configs from before maps existed: their characters become the first map. */
+function mapsFromFlatConfig(stored) {
+  const characters = structuredClone(stored.characters ?? {});
+  const { enemy1, enemy2 } = characters;
+  // The first XP defaults gave the stronger enemy less; an untouched pair moves to the corrected values.
+  if (enemy1?.xp === 10 && enemy2?.xp === 40) {
+    enemy1.xp = 40;
+    enemy2.xp = 10;
+  }
+  return { [MAPS[0]]: { characters } };
 }
 
 /** Fills fields added by newer versions with their defaults. */
 function upgrade(stored) {
   const base = defaultConfig();
+  const storedMaps = stored.maps ?? mapsFromFlatConfig(stored);
   const merged = {
     site: { ...base.site, ...stored.site, colors: { ...base.site.colors, ...stored.site?.colors } },
     gameplay: { ...base.gameplay, ...stored.gameplay },
-    characters: {},
+    maps: {},
   };
-  for (const role of ROLES) merged.characters[role] = { ...base.characters[role], ...stored.characters?.[role] };
+  for (const mapId of MAPS) {
+    const map = storedMaps[mapId];
+    const characters = {};
+    for (const role of ROLES) characters[role] = { ...base.maps[mapId].characters[role], ...map?.characters?.[role] };
+    merged.maps[mapId] = { name: map?.name ?? base.maps[mapId].name, characters };
+  }
   // Before there were two joysticks the single one could be centred.
   if (merged.site.joystickSide === 'center') merged.site.joystickSide = 'left';
   return merged;
@@ -61,9 +84,11 @@ export class Store {
       const config = upgrade(parsed.config);
       const result = validateConfig(withEditableFields(config));
       if (!result.ok) throw new Error(result.errors.join('; '));
-      for (const role of ROLES) {
-        const sprite = config.characters[role].sprite;
-        result.value.characters[role].sprite = SPRITE_HASH.test(sprite ?? '') ? sprite : null;
+      for (const mapId of MAPS) {
+        for (const role of ROLES) {
+          const sprite = config.maps[mapId].characters[role].sprite;
+          result.value.maps[mapId].characters[role].sprite = SPRITE_HASH.test(sprite ?? '') ? sprite : null;
+        }
       }
       return { revision: Number(parsed.revision) || 1, config: result.value };
     } catch (err) {
@@ -82,7 +107,7 @@ export class Store {
   }
 
   #removeUnusedSprites() {
-    const used = new Set(ROLES.map((role) => this.state.config.characters[role].sprite));
+    const used = new Set(MAPS.flatMap((mapId) => ROLES.map((role) => this.state.config.maps[mapId].characters[role].sprite)));
     for (const name of fs.readdirSync(this.spriteDir)) {
       if (!used.has(name.replace(/\.png$/, ''))) fs.rmSync(path.join(this.spriteDir, name), { force: true });
     }
@@ -100,10 +125,12 @@ export class Store {
   /** What the public game loads. Sprite hashes become cache-busting URLs. */
   publicConfig() {
     const { revision, config } = this.snapshot();
-    for (const role of ROLES) {
-      const ch = config.characters[role];
-      ch.spriteUrl = ch.sprite ? `/sprites/${ch.sprite}.png` : null;
-      delete ch.sprite;
+    for (const mapId of MAPS) {
+      for (const role of ROLES) {
+        const ch = config.maps[mapId].characters[role];
+        ch.spriteUrl = ch.sprite ? `/sprites/${ch.sprite}.png` : null;
+        delete ch.sprite;
+      }
     }
     return { revision, ...config };
   }
@@ -111,7 +138,9 @@ export class Store {
   /** Replaces editable fields. Sprites are carried over untouched. */
   replace(value) {
     const next = structuredClone(value);
-    for (const role of ROLES) next.characters[role].sprite = this.state.config.characters[role].sprite;
+    for (const mapId of MAPS) {
+      for (const role of ROLES) next.maps[mapId].characters[role].sprite = this.state.config.maps[mapId].characters[role].sprite;
+    }
     return this.#commit(next);
   }
 
@@ -120,17 +149,17 @@ export class Store {
     return this.#commit(defaultConfig());
   }
 
-  setSprite(role, png) {
+  setSprite(mapId, role, png) {
     const hash = crypto.createHash('sha256').update(png).digest('hex');
     writeAtomic(path.join(this.spriteDir, `${hash}.png`), png);
     const next = structuredClone(this.state.config);
-    next.characters[role].sprite = hash;
+    next.maps[mapId].characters[role].sprite = hash;
     return this.#commit(next);
   }
 
-  clearSprite(role) {
+  clearSprite(mapId, role) {
     const next = structuredClone(this.state.config);
-    next.characters[role].sprite = null;
+    next.maps[mapId].characters[role].sprite = null;
     return this.#commit(next);
   }
 

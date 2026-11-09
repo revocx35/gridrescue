@@ -1,4 +1,5 @@
 // Game rules, with no DOM access: the browser renders this state and tests run it headlessly.
+import { createForest, hitsSolid, pushOutOfSolids } from './scenery.js';
 
 const TAU = Math.PI * 2;
 const DEG = Math.PI / 180;
@@ -15,6 +16,10 @@ const ORB_MAGNET = 150;
 const ORB_PICKUP = 26;
 const ORB_SPEED = 560;
 const MAX_COMPANIONS = 6;
+const ENEMY5_EARLIEST = 40; // seconds into a run, so nobody meets the strongest enemy with a starting gun
+const BALL_TELEGRAPH = 0.5;
+const BALL_TTL = 5;
+const KILL_HEAL = { enemy1: 12, enemy2: 3, enemy5: 30 };
 const PLAYER_PUMP = { pellets: 5, spread: 0.15, ttl: 0.46, damageFactor: 0.55, intervalFactor: 1.7 };
 export const CELL_SIZE = 80;
 
@@ -42,8 +47,12 @@ export function createGame(cfg, { rng = Math.random, view = { halfW: 500, halfH:
     kind: 'boss', mode: 'idle', alive: true,
     fanT: 1.2, ringT: 3.4, chargeT: 5, windup: 0, dash: 0, dashX: 0, dashY: 0,
   };
+  // The arena and the start stay open so a fight is never decided by where a tree landed.
+  const world = cfg.mapId === 'forest'
+    ? createForest(Math.floor(rng() * 2 ** 31), [{ x: 0, y: 0, r: 260 }, { x: hostage.x, y: hostage.y, r: arena + 60 }])
+    : null;
   return {
-    cfg, rng, view,
+    cfg, rng, view, world,
     status: 'playing',
     time: 0, kills: 0, spawnT: 1.4, grace: 0,
     player: actor(0, 0, c.player),
@@ -52,7 +61,7 @@ export function createGame(cfg, { rng = Math.random, view = { halfW: 500, halfH:
     hostage, boss,
     enemies: [], shots: [], bullets: [], orbs: [],
     xp: 0,
-    gun: { bonusDamage: 0, pierce: 0, pump: false },
+    gun: { damagePercent: 0, pierce: 0, pump: false },
     hint: null,
     events: [],
   };
@@ -79,8 +88,8 @@ function nearestEnemy(s, from, range) {
 /** The player's current gun, after upgrades. */
 function playerWeapon(s) {
   const ch = s.cfg.characters.player;
-  const { bonusDamage, pierce, pump } = s.gun;
-  const damage = ch.damage + bonusDamage;
+  const { damagePercent, pierce, pump } = s.gun;
+  const damage = ch.damage * (1 + damagePercent / 100);
   if (!pump) return { damage, fireInterval: ch.fireInterval, pierce };
   return {
     damage: damage * PLAYER_PUMP.damageFactor,
@@ -138,8 +147,7 @@ function lightHint(s) {
 
 function killEnemy(s, e) {
   s.kills += 1;
-  const heal = e.kind === 'enemy1' ? 12 : 3;
-  s.player.hp = Math.min(s.player.maxHp, s.player.hp + heal);
+  s.player.hp = Math.min(s.player.maxHp, s.player.hp + KILL_HEAL[e.kind]);
   emit(s, 'kill', { x: e.x, y: e.y, kind: e.kind });
   const xp = s.cfg.characters[e.kind].xp;
   if (xp > 0) s.orbs.push({ x: e.x, y: e.y, xp });
@@ -199,13 +207,18 @@ function spawnEnemy(s) {
   const x = player.x + Math.cos(angle) * ring;
   const y = player.y + Math.sin(angle) * ring;
   if (Math.hypot(x - hostage.x, y - hostage.y) < g.arenaRadius + 60) return;
-  const kind = rng() < g.enemy1Chance ? 'enemy1' : 'enemy2';
+  const roll = rng();
+  const kind = roll < g.enemy5Chance && s.time >= ENEMY5_EARLIEST ? 'enemy5' : roll < g.enemy5Chance + g.enemy1Chance ? 'enemy1' : 'enemy2';
   const ch = cfg.characters[kind];
   const e = actor(x, y, ch);
   e.kind = kind;
   e.speed = ch.speed * (0.92 + rng() * 0.16);
   e.damage = ch.damage;
-  e.attack = ch.attackType;
+  e.attack = kind === 'enemy5' ? 'ball' : ch.attackType;
+  if (kind === 'enemy5') {
+    e.ballT = ch.fireInterval;
+    emit(s, 'enemy5');
+  }
   s.enemies.push(e);
 }
 
@@ -258,6 +271,7 @@ function updateCompanion(s, m, index, dt) {
   m.vy = dy * ch.speed * follow;
   m.x += m.vx * dt;
   m.y += m.vy * dt;
+  pushOutOfSolids(s.world, m, dt);
   if (Math.abs(m.vx) > 5) m.face = Math.sign(m.vx);
   fireAt(s, m, ch, dt);
 }
@@ -306,6 +320,30 @@ function updateRangedAttack(s, e, target, spec, d, dt) {
   }
 }
 
+/** Enemy 5 walks like a melee enemy and throws a large ball on a fixed timer, showing the line first. */
+function updateBallAttack(s, e, target, dt) {
+  const { fireInterval } = s.cfg.characters.enemy5;
+  const telegraph = Math.min(BALL_TELEGRAPH, fireInterval / 2);
+  e.ballT -= dt;
+  if (!onScreen(s, e)) {
+    e.ballT = Math.max(e.ballT, telegraph);
+    e.windup = 0;
+    return;
+  }
+  if (e.ballT > telegraph) return;
+  if (!(e.windup > 0)) e.aim = Math.atan2(target.y - e.y, target.x - e.x);
+  e.windup = Math.max(e.ballT, 0.001);
+  if (e.ballT > 0) return;
+  const ball = s.cfg.characters.ball;
+  s.bullets.push({
+    x: e.x, y: e.y,
+    vx: Math.cos(e.aim) * ball.speed, vy: Math.sin(e.aim) * ball.speed,
+    ttl: BALL_TTL, r: radius(ball.size), damage: ball.damage, ball: true,
+  });
+  e.ballT = fireInterval;
+  e.windup = 0;
+}
+
 function updateEnemies(s, dt) {
   for (let i = s.enemies.length - 1; i >= 0; i--) {
     const e = s.enemies[i];
@@ -334,8 +372,10 @@ function updateEnemies(s, dt) {
     e.vy = vy;
     e.x += vx * dt;
     e.y += vy * dt;
+    pushOutOfSolids(s.world, e, dt);
     if (Math.abs(vx) > 5) e.face = Math.sign(vx);
     e.flash = Math.max(0, e.flash - dt);
+    if (e.attack === 'ball') updateBallAttack(s, e, target, dt);
     if (spec) {
       updateRangedAttack(s, e, target, spec, d, dt);
       continue;
@@ -468,6 +508,11 @@ function updateShots(s, dt) {
     p.x += p.vx * dt;
     p.y += p.vy * dt;
     p.ttl -= dt;
+    if (hitsSolid(s.world, p.x, p.y)) {
+      emit(s, 'impact', { x: p.x, y: p.y });
+      s.shots.splice(i, 1);
+      continue;
+    }
     // A shot stops at its first enemy unless it still has pierce left, and hits each enemy once.
     let spent = false;
     const strike = (e) => {
@@ -491,6 +536,11 @@ function updateBullets(s, dt) {
     b.x += b.vx * dt;
     b.y += b.vy * dt;
     b.ttl -= dt;
+    if (!b.ball && hitsSolid(s.world, b.x, b.y)) { // the large ball rolls straight through cover
+      emit(s, 'impact', { x: b.x, y: b.y });
+      s.bullets.splice(i, 1);
+      continue;
+    }
     let hit = false;
     if (dist(b, s.player) < b.r + s.player.r) {
       hurtPlayer(s, b.damage);
@@ -546,7 +596,7 @@ export function applyUpgrade(s, id) {
   if (s.status !== 'levelup' || !availableUpgrades(s).includes(id)) return false;
   const g = s.cfg.gameplay;
   if (id === 'pump') s.gun.pump = true;
-  if (id === 'damage') s.gun.bonusDamage += g.upgradeDamage;
+  if (id === 'damage') s.gun.damagePercent += g.upgradeDamage;
   if (id === 'pierce') s.gun.pierce += 1;
   if (id === 'companion') addCompanion(s);
   if (id === 'health') {
@@ -586,6 +636,7 @@ export function step(s, dt, input) {
   p.vy = input.y * scale * ch.speed;
   p.x += p.vx * dt;
   p.y += p.vy * dt;
+  pushOutOfSolids(s.world, p, dt);
   if (Math.abs(p.vx) > 5) p.face = Math.sign(p.vx);
   p.flash = Math.max(0, p.flash - dt);
 

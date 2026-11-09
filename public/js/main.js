@@ -1,7 +1,7 @@
 // Page bootstrap: applies the admin-set layout, wires input and runs the game loop.
 import { Joystick } from './joystick.js';
 import { Renderer, drawSpriteInBox, loadSprites } from './render.js';
-import { ROLES } from './schema.js';
+import { MAPS, NAMED_ROLES, mapConfig } from './schema.js';
 import { applyUpgrade, availableUpgrades, createGame, step } from './sim.js';
 
 const FIXED_STEP = 1 / 60;
@@ -43,7 +43,7 @@ function formatTime(seconds) {
 function buildRoster(config, sprites) {
   const roster = $('roster');
   roster.replaceChildren();
-  for (const role of ROLES) {
+  for (const role of NAMED_ROLES) {
     const item = document.createElement('div');
     item.className = 'roster-item';
     const canvas = document.createElement('canvas');
@@ -126,10 +126,11 @@ class MouseAim {
 }
 
 class Game {
-  constructor(config, sprites) {
-    this.config = config;
-    this.names = Object.fromEntries(ROLES.map((role) => [role, config.characters[role].name]));
-    this.renderer = new Renderer($('game'), config, sprites);
+  constructor(fullConfig, mapId, sprites, loadMapSprites) {
+    this.fullConfig = fullConfig;
+    this.loadMapSprites = loadMapSprites;
+    this.useMap(mapId, sprites, true);
+    this.renderer = new Renderer($('game'), this.config, sprites);
     this.keyboard = new Keyboard();
     this.moveStick = new Joystick($('joystick-move'), $('knob-move'));
     this.aimStick = new Joystick($('joystick-aim'), $('knob-aim'));
@@ -137,7 +138,7 @@ class Game {
     this.mode = 'menu';
     this.accumulator = 0;
     this.lastFrame = performance.now();
-    this.state = createGame(config, { view: this.renderer.view });
+    this.state = createGame(this.config, { view: this.renderer.view });
     this.toastTimer = 0;
     this.hudCache = {};
 
@@ -154,6 +155,41 @@ class Game {
     requestAnimationFrame((t) => this.frame(t));
   }
 
+  useMap(mapId, sprites, firstTime = false) {
+    this.mapId = mapId;
+    this.sprites = sprites;
+    this.config = mapConfig(this.fullConfig, mapId);
+    this.names = Object.fromEntries(NAMED_ROLES.map((role) => [role, this.config.characters[role].name]));
+    buildRoster(this.config, sprites);
+    if (firstTime) return;
+    this.renderer.setMap(this.config, sprites);
+    this.renderer.camera = null;
+    this.state = createGame(this.config, { view: this.renderer.view });
+  }
+
+  buildMapPicker() {
+    $('map-picker').replaceChildren(...MAPS.map((id) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'map-choice';
+      button.textContent = this.fullConfig.maps[id].name;
+      button.setAttribute('aria-pressed', String(id === this.mapId));
+      button.addEventListener('click', () => this.selectMap(id));
+      return button;
+    }));
+  }
+
+  async selectMap(id) {
+    if (id === this.mapId) return;
+    this.pendingMap = id;
+    const sprites = await this.loadMapSprites(id);
+    // A slower earlier choice, or a game started meanwhile, must not swap the map underneath.
+    if (this.pendingMap !== id || (this.mode !== 'menu' && this.mode !== 'ended')) return;
+    this.useMap(id, sprites);
+    this.mode = 'menu';
+    this.showMenu();
+  }
+
   onKey(e) {
     if (this.mode === 'levelup') {
       const choice = /^Digit([1-5])$/.exec(e.code);
@@ -164,6 +200,7 @@ class Game {
       if (this.mode === 'playing') this.pause();
       else if (this.mode === 'paused') this.resume();
     } else if ((e.code === 'Enter' || e.code === 'Space') && this.mode !== 'playing') {
+      if (e.target.closest?.('.map-choice')) return; // that key is choosing a map, not starting
       e.preventDefault();
       this.onOverlayAction();
     }
@@ -174,13 +211,15 @@ class Game {
     else this.start();
   }
 
-  overlay({ heading, text, action, roster = false, upgrades = false }) {
+  overlay({ heading, text, action, roster = false, upgrades = false, picker = false }) {
     $('overlay-heading').textContent = heading;
     $('overlay-text').textContent = text;
     $('overlay-action').textContent = action ?? '';
     $('overlay-action').hidden = upgrades;
     $('upgrades').hidden = !upgrades;
     $('roster').hidden = !roster;
+    $('map-picker').hidden = !picker;
+    if (picker) this.buildMapPicker();
     $('controls-hint').hidden = !roster;
     $('overlay').hidden = false;
     const first = upgrades ? $('upgrades').firstElementChild : $('overlay-action');
@@ -191,7 +230,7 @@ class Game {
     const { upgradeDamage, upgradeHealth } = this.config.gameplay;
     return {
       pump: 'Change gun to pump',
-      damage: `Add ${upgradeDamage} damage`,
+      damage: `Add ${upgradeDamage}% damage`,
       health: `Add ${upgradeHealth} health`,
       companion: `Add 1 more ${this.names.companion}`,
       pierce: 'Bullets pass through +1 enemy',
@@ -234,10 +273,12 @@ class Game {
       text: `Keep moving and destroy what chases you. Each kill lights up the way to ${hostage}. Defeat ${boss} to set them free.`,
       action: site.startLabel,
       roster: true,
+      picker: true,
     });
   }
 
   start() {
+    this.pendingMap = null;
     this.renderer.camera = null;
     this.renderer.particles.length = 0;
     this.renderer.rings.length = 0;
@@ -280,6 +321,7 @@ class Game {
       heading: won ? `${this.names.hostage} rescued` : 'Game over',
       text: `${won ? site.winText : site.loseText} Time ${formatTime(this.state.time)}, ${this.state.kills} destroyed.`,
       action: 'Play again',
+      picker: true,
     });
   }
 
@@ -296,6 +338,9 @@ class Game {
       case 'hint':
         if (!this.hintExplained) this.toast(`The light shows the general way to ${hostage}`);
         this.hintExplained = true;
+        break;
+      case 'enemy5':
+        this.toast(`${this.names.enemy5} has appeared`);
         break;
       case 'companion':
         this.toast(event.revived ? `${companion} is back` : `${companion} joined the fight`);
@@ -412,9 +457,12 @@ async function main() {
   syncLayout();
   layoutQuery.addEventListener('change', syncLayout);
 
-  const sprites = await loadSprites(config);
-  buildRoster(config, sprites);
-  new Game(config, sprites);
+  const loaded = new Map();
+  const loadMapSprites = (id) => {
+    if (!loaded.has(id)) loaded.set(id, loadSprites(id, config.maps[id].characters));
+    return loaded.get(id);
+  };
+  new Game(config, MAPS[0], await loadMapSprites(MAPS[0]), loadMapSprites);
 }
 
 main();

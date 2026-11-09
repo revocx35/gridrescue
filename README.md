@@ -1,16 +1,17 @@
 # Grid Rescue
 
-A 2D rescue game on an endless grid. Run from the enemies that hunt you, destroy them to light up the general
+A 2D rescue game on endless maps. Run from the enemies that hunt you, destroy them to light up the general
 direction of the hostage, then defeat the boss guarding them. Plays with the keyboard on desktop and an on-screen
 joystick on phones.
 
 Nobody needs an account to play. An admin signs in through [Authentik](https://goauthentik.io/) to edit the game:
 
-- the name and image of all six characters (player, companion, hostage, enemy 1, enemy 2, enemy 3 the boss)
+- two maps, each with its own name and its own full cast: name and image for the player, companion, hostage, enemy 1,
+  enemy 2, enemy 3 (the boss) and enemy 5, plus the texture of enemy 5's large ball
 - the site menu: game title, tagline, button and end-screen text, colours, page order for desktop and mobile,
   joystick size and which side the movement stick is on
 - each enemy's attack type: melee, sniper (one bullet) or pump (spread)
-- XP dropped by each enemy, XP needed per upgrade, and how much the damage and health upgrades add
+- XP dropped by each enemy, XP needed per upgrade, the damage upgrade's percentage and the health upgrade's amount
 - gameplay numbers: health, speed, damage, spawn rates, how far away the hostage is and how wide the hint is
 
 ## How it plays
@@ -20,8 +21,10 @@ Nobody needs an account to play. An admin signs in through [Authentik](https://g
 | Move | WASD or arrow keys, or the left joystick |
 | Attack | Automatic: you and your companion fire at the nearest enemy in range. Hold the right joystick on phones, or the left mouse button on desktop, to aim yourself |
 | Find the hostage | Every enemy you destroy briefly lights a wedge of the grid. The hostage is somewhere inside it |
+| Maps | Choose on the start screen. The Grid is open floor; the forest map is full of trees and exploded tanks that block movement and bullets |
+| Enemy 5 | The strongest and rarest enemy. Throws a large ball every 3 seconds that rolls through cover |
 | Companion | Joins after enough kills, or as you get close to the hostage, whichever comes first |
-| Upgrades | Destroyed enemies drop XP. Every 200 XP the game freezes and you pick one: pump gun, more damage, more health, one more companion, or bullets that pass through one more enemy |
+| Upgrades | Destroyed enemies drop XP. Every 200 XP the game freezes and you pick one: pump gun, 20% more damage, more health, one more companion, or bullets that pass through one more enemy |
 | Win | Defeat the boss, then reach the hostage |
 
 ## Run it

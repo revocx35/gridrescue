@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { defaultConfig } from '../public/js/schema.js';
+import { defaultConfig, mapConfig } from '../public/js/schema.js';
+import { forEachItemIn, hitsSolid } from '../public/js/scenery.js';
 import { applyUpgrade, availableUpgrades, createGame, step } from '../public/js/sim.js';
 
 const DT = 1 / 60;
@@ -16,8 +17,8 @@ function seeded(seed) {
   };
 }
 
-function game(seed = 1, edit = () => {}) {
-  const cfg = defaultConfig();
+function game(seed = 1, edit = () => {}, mapId = 'grid') {
+  const cfg = mapConfig(defaultConfig(), mapId);
   edit(cfg);
   return createGame(cfg, { rng: seeded(seed) });
 }
@@ -391,7 +392,7 @@ describe('enemy attack types', () => {
   });
 
   it('spawned enemies use the attack type set by the admin', () => {
-    const s = game(3, (c) => { c.characters.enemy2.attackType = 'sniper'; c.gameplay.enemy1Chance = 0; });
+    const s = game(3, (c) => { c.characters.enemy2.attackType = 'sniper'; c.gameplay.enemy1Chance = 0; c.gameplay.enemy5Chance = 0; });
     s.spawnT = 0;
     step(s, DT, still);
     assert.equal(s.enemies[0].attack, 'sniper');
@@ -447,10 +448,13 @@ describe('XP and upgrades', () => {
     assert.deepEqual(s.orbs.map((o) => o.xp).sort((a, b) => a - b), [10, 40]);
   });
 
-  it('defaults to 10 XP for enemy 1, 40 for enemy 2 and 200 per upgrade', () => {
-    const { characters, gameplay } = defaultConfig();
-    assert.equal(characters.enemy1.xp, 10);
-    assert.equal(characters.enemy2.xp, 40);
+  it('pays more XP for stronger enemies on every map, with 200 per upgrade', () => {
+    const { maps, gameplay } = defaultConfig();
+    for (const { characters: c } of Object.values(maps)) {
+      assert.ok(c.enemy5.xp > c.enemy1.xp && c.enemy1.xp > c.enemy2.xp);
+      assert.equal(c.enemy1.xp, 40);
+      assert.equal(c.enemy2.xp, 10);
+    }
     assert.equal(gameplay.xpToUpgrade, 200);
   });
 
@@ -534,7 +538,7 @@ describe('XP and upgrades', () => {
   it('refuses a choice when no menu is open, or one not on offer', () => {
     const s = quiet();
     assert.equal(applyUpgrade(s, 'damage'), false);
-    assert.equal(s.gun.bonusDamage, 0);
+    assert.equal(s.gun.damagePercent, 0);
     levelUp(s);
     assert.equal(applyUpgrade(s, 'invincible'), false);
     assert.equal(s.status, 'levelup');
@@ -545,7 +549,14 @@ describe('XP and upgrades', () => {
     levelUp(s);
     applyUpgrade(s, 'damage');
     step(s, DT, { x: 0, y: 0, aimX: 1, aimY: 0 });
-    assert.equal(s.shots[0].damage, s.cfg.characters.player.damage + 20);
+    assert.ok(Math.abs(s.shots[0].damage - s.cfg.characters.player.damage * 1.2) < 1e-9);
+  });
+
+  it('stacks the damage percentage on base damage, not on itself', () => {
+    const s = quiet();
+    for (let i = 0; i < 2; i++) { levelUp(s); applyUpgrade(s, 'damage'); }
+    step(s, DT, { x: 0, y: 0, aimX: 1, aimY: 0 });
+    assert.ok(Math.abs(s.shots[0].damage - s.cfg.characters.player.damage * 1.4) < 1e-9);
   });
 
   it('adds to both maximum and current health', () => {
@@ -563,7 +574,7 @@ describe('XP and upgrades', () => {
     applyUpgrade(s, 'damage');
     levelUp(s);
     applyUpgrade(s, 'health');
-    assert.equal(s.gun.bonusDamage, 5);
+    assert.equal(s.gun.damagePercent, 5);
     assert.equal(s.player.maxHp, s.cfg.characters.player.hp + 7);
   });
 
@@ -673,6 +684,237 @@ describe('XP and upgrades', () => {
     for (let i = 0; i < 40 && !s.shots.length; i++) step(s, DT, still);
     assert.equal(s.shots[0].ally, true);
     assert.equal(s.shots[0].pierce, 0);
+  });
+});
+
+describe('enemy 5', () => {
+  function withEnemy5(x = 300, edit) {
+    const s = game(1, edit);
+    s.spawnT = 1e9;
+    s.cfg.characters.player.damage = 0;
+    s.player.hp = s.player.maxHp = 1e9;
+    const e = placeEnemy(s, 'enemy5', x, 0);
+    e.attack = 'ball';
+    e.ballT = s.cfg.characters.enemy5.fireInterval;
+    e.speed = 0;
+    return { s, e };
+  }
+
+  it('is the strongest and the rarest regular enemy', () => {
+    const { maps, gameplay } = defaultConfig();
+    for (const { characters: c } of Object.values(maps)) {
+      assert.ok(c.enemy5.hp > c.enemy1.hp && c.enemy5.damage > c.enemy1.damage);
+    }
+    assert.ok(gameplay.enemy5Chance < gameplay.enemy1Chance);
+  });
+
+  it('spawns with its chance, ready to throw', () => {
+    const s = game(3, (c) => { c.gameplay.enemy1Chance = 0; c.gameplay.enemy5Chance = 1; });
+    s.time = 41;
+    s.spawnT = 0;
+    step(s, DT, still);
+    assert.equal(s.enemies[0].kind, 'enemy5');
+    assert.equal(s.enemies[0].attack, 'ball');
+    assert.ok(s.events.some((event) => event.type === 'enemy5'));
+  });
+
+  it('does not appear in the opening of a run', () => {
+    const s = game(3, (c) => { c.gameplay.enemy5Chance = 1; });
+    s.spawnT = 0;
+    step(s, DT, still);
+    assert.notEqual(s.enemies[0].kind, 'enemy5');
+  });
+
+  it('throws one large ball every 3 seconds by default', () => {
+    const { s } = withEnemy5();
+    const times = [];
+    let seen = new Set();
+    for (let i = 0; i < 60 * 10; i++) {
+      step(s, DT, still);
+      for (const b of s.bullets) {
+        if (!seen.has(b)) { seen.add(b); times.push(s.time); }
+      }
+    }
+    assert.equal(times.length, 3);
+    assert.ok(Math.abs(times[1] - times[0] - 3) < 0.05, String(times));
+    assert.ok(Math.abs(times[2] - times[1] - 3) < 0.05, String(times));
+  });
+
+  it('uses the ball\'s own size, speed and damage', () => {
+    const { s } = withEnemy5(300, (c) => { c.characters.ball.size = 100; c.characters.ball.speed = 123; c.characters.ball.damage = 7; });
+    for (let i = 0; i < 60 * 4 && !s.bullets.length; i++) step(s, DT, still);
+    const [b] = s.bullets;
+    assert.equal(b.ball, true);
+    assert.equal(b.damage, 7);
+    assert.ok(Math.abs(Math.hypot(b.vx, b.vy) - 123) < 1e-6);
+    assert.ok(b.r > 30);
+  });
+
+  it('shows the line first and throws along it, so the ball can be dodged', () => {
+    const { s, e } = withEnemy5();
+    for (let i = 0; i < 60 * 4 && !(e.windup > 0); i++) step(s, DT, still);
+    assert.ok(e.windup > 0);
+    const locked = e.aim;
+    s.player.y = 200;
+    for (let i = 0; i < 60 && !s.bullets.length; i++) step(s, DT, still);
+    assert.ok(Math.abs(Math.atan2(s.bullets[0].vy, s.bullets[0].vx) - locked) < 1e-9);
+  });
+
+  it('does not throw from outside the player\'s view', () => {
+    const { s, e } = withEnemy5();
+    e.x = s.view.halfW + 60;
+    for (let i = 0; i < 60 * 7; i++) step(s, DT, still);
+    assert.equal(s.bullets.length, 0);
+  });
+
+  it('hits on contact too', () => {
+    const { s, e } = withEnemy5(5);
+    step(s, DT, still);
+    assert.equal(s.player.maxHp - s.player.hp, e.damage);
+  });
+
+  it('a ball hurts the player it reaches', () => {
+    const { s } = withEnemy5(2000);
+    s.enemies.length = 0;
+    s.bullets.push({ x: 0, y: 0, vx: 0, vy: 0, ttl: 5, r: 40, damage: 35, ball: true });
+    step(s, DT, still);
+    assert.equal(s.player.maxHp - s.player.hp, 35);
+    assert.equal(s.bullets.length, 0);
+  });
+
+  it('drops its XP when destroyed', () => {
+    const { s, e } = withEnemy5(300);
+    e.hp = 1;
+    s.shots.push({ x: 300, y: 0, vx: 0, vy: 0, ttl: 1, damage: 10 });
+    step(s, DT, still);
+    assert.deepEqual(s.orbs.map((o) => o.xp), [s.cfg.characters.enemy5.xp]);
+  });
+});
+
+describe('maps', () => {
+  const forest = (seed = 5, edit = () => {}) => game(seed, edit, 'forest');
+  const itemsAround = (s, x, y, half) => {
+    const items = [];
+    forEachItemIn(s.world, x - half, y - half, x + half, y + half, (item) => items.push(item));
+    return items;
+  };
+
+  it('uses the chosen map\'s characters', () => {
+    const grid = game(1);
+    const woods = forest(1);
+    assert.notEqual(grid.cfg.characters.player.name, woods.cfg.characters.player.name);
+  });
+
+  it('the first map has no obstacles', () => {
+    assert.equal(game(1).world, null);
+  });
+
+  it('has both forests and exploded tanks all over', () => {
+    const s = forest();
+    for (const [x, y] of [[4000, 4000], [-9000, 2000], [30000, -30000]]) {
+      const items = itemsAround(s, x, y, 2000);
+      assert.ok(items.filter((i) => i.kind === 'tree').length > 30);
+      assert.ok(items.filter((i) => i.kind === 'tank').length > 5);
+    }
+  });
+
+  it('builds the same world every time for one seed, and a different one for another', () => {
+    const a = createGame(mapConfig(defaultConfig(), 'forest'), { rng: seeded(11) });
+    const b = createGame(mapConfig(defaultConfig(), 'forest'), { rng: seeded(11) });
+    const c = createGame(mapConfig(defaultConfig(), 'forest'), { rng: seeded(12) });
+    const shape = (s) => JSON.stringify(itemsAround(s, 3000, 3000, 900));
+    assert.equal(shape(a), shape(b));
+    assert.notEqual(shape(a), shape(c));
+  });
+
+  it('keeps the start and the boss arena clear', () => {
+    for (let seed = 1; seed < 15; seed++) {
+      const s = forest(seed);
+      const arena = s.cfg.gameplay.arenaRadius;
+      for (const item of itemsAround(s, 0, 0, 300)) assert.ok(Math.hypot(item.x, item.y) > 260);
+      for (const item of itemsAround(s, s.hostage.x, s.hostage.y, arena + 100)) {
+        assert.ok(dist(item, s.hostage) > arena + 60);
+      }
+    }
+  });
+
+  function besideTree(s) {
+    const tree = itemsAround(s, 3000, 3000, 800).find((item) => item.kind === 'tree');
+    assert.ok(tree);
+    return tree;
+  }
+
+  it('trees block the player, who slides around them', () => {
+    const s = forest();
+    s.spawnT = 1e9;
+    const tree = besideTree(s);
+    s.player.x = tree.x - 100;
+    s.player.y = tree.y;
+    for (let i = 0; i < 60 * 3; i++) {
+      step(s, DT, { x: 1, y: 0 });
+      assert.equal(hitsSolid(s.world, s.player.x, s.player.y), false);
+    }
+    assert.ok(s.player.x > tree.x, 'walking straight at a trunk still gets past it');
+  });
+
+  it('bullets stop at obstacles', () => {
+    const s = forest();
+    s.spawnT = 1e9;
+    const tree = besideTree(s);
+    s.player.x = tree.x - 80;
+    s.player.y = tree.y;
+    s.shots.push({ x: tree.x - 40, y: tree.y, vx: 680, vy: 0, ttl: 1, damage: 5 });
+    s.bullets.push({ x: tree.x - 40, y: tree.y + 3, vx: 300, vy: 0, ttl: 1, r: 6, damage: 5 });
+    s.player.cool = 1e9;
+    for (let i = 0; i < 12; i++) step(s, DT, still);
+    assert.equal(s.shots.length, 0);
+    assert.equal(s.bullets.length, 0);
+    assert.ok(s.events.some((event) => event.type === 'impact'));
+  });
+
+  it('the large ball rolls through obstacles', () => {
+    const s = forest();
+    s.spawnT = 1e9;
+    const tree = besideTree(s);
+    s.player.x = tree.x - 400;
+    s.player.y = tree.y;
+    s.bullets.push({ x: tree.x - 60, y: tree.y, vx: 300, vy: 0, ttl: 1, r: 38, damage: 5, ball: true });
+    s.player.cool = 1e9;
+    for (let i = 0; i < 30; i++) step(s, DT, still);
+    assert.equal(s.bullets.length, 1);
+  });
+
+  it('chasing enemies get around trees', () => {
+    const s = forest();
+    s.spawnT = 1e9;
+    s.cfg.characters.player.damage = 0;
+    s.player.hp = s.player.maxHp = 1e9;
+    const tree = besideTree(s);
+    s.player.x = tree.x + 70;
+    s.player.y = tree.y;
+    placeEnemy(s, 'enemy2', tree.x - 70, tree.y);
+    for (let i = 0; i < 60 * 5; i++) step(s, DT, still);
+    assert.ok(s.player.hp < s.player.maxHp);
+  });
+
+  it('a simple bot can finish the forest map, so it is winnable', () => {
+    let wins = 0;
+    const results = [];
+    for (let seed = 1; seed <= 12; seed++) {
+      const s = forest(seed * 37);
+      let frames = 0;
+      const picks = ['damage', 'companion', 'health', 'pierce'];
+      while ((s.status === 'playing' || s.status === 'levelup') && frames < 60 * 300) {
+        if (s.status === 'levelup') applyUpgrade(s, picks[s.kills % picks.length]);
+        step(s, DT, bot(s));
+        frames += 1;
+        s.events.length = 0;
+      }
+      results.push(`${s.status}:${Math.round(s.time)}s/${s.kills}k`);
+      if (s.status === 'won') wins += 1;
+    }
+    assert.ok(wins >= 3, results.join(' '));
+    console.log('forest bot results', results.join(' '));
   });
 });
 

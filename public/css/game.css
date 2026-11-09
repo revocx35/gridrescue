@@ -163,8 +163,7 @@ body {
 .overlay {
   position: absolute;
   inset: 0;
-  display: grid;
-  place-items: center;
+  display: flex;
   padding: 12px;
   overflow-y: auto;
   background: rgba(5, 8, 12, 0.62);
@@ -173,6 +172,7 @@ body {
 
 .card {
   width: min(520px, 100%);
+  margin: auto; /* unlike centring on the parent, this still scrolls to the top on a short screen */
   padding: 20px;
   border: 1px solid var(--line);
   border-radius: 14px;
@@ -184,7 +184,7 @@ body {
 
 .roster {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: 6px;
   margin-bottom: 16px;
 }
@@ -198,6 +198,25 @@ body {
   text-overflow: ellipsis;
   color: var(--muted);
 }
+
+.map-picker { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 8px; margin-bottom: 14px; }
+
+.map-choice {
+  min-height: 44px;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+.map-choice:hover { border-color: var(--accent); }
+.map-choice[aria-pressed="true"] { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 20%, transparent); }
+.map-choice:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
 
 .upgrades { display: grid; gap: 8px; }
 
@@ -350,6 +369,8 @@ body[data-layout="mobile"] .controls-hint { display: none; }
     height: min(var(--joy-size), 24vw, calc(100dvh - 84px));
   }
   body[data-layout="mobile"] .roster { display: none; }
+  body[data-layout="mobile"] .map-picker { margin-bottom: 6px; }
+  body[data-layout="mobile"] .map-choice { min-height: 40px; padding: 4px 8px; font-size: 13px; }
   body[data-layout="mobile"] .upgrades { grid-template-columns: 1fr 1fr; gap: 6px; }
   body[data-layout="mobile"] .upgrade { min-height: 40px; padding: 4px 10px; font-size: 13px; }
   body[data-layout="mobile"] .card { padding: 10px; }

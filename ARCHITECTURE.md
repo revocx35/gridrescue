@@ -21,11 +21,20 @@ are deleted on every commit. A monotonically increasing `revision` gives optimis
 
 ## Game rules
 
-- The world is unbounded: positions are plain numbers and the grid is computed from the camera, so there is no map.
-  Floor variation comes from hashing cell coordinates.
+- The world is unbounded: positions are plain numbers and the floor is computed from the camera. Floor variation comes
+  from hashing cell coordinates.
+- The config holds several maps (`config.maps.<id>`: `name`, `characters`). `site` and `gameplay` are shared. The player
+  picks a map on the start or end screen; sprites load per map on first use.
+- The forest map (`scenery.js`) builds obstacles per 480 px chunk from a per-run seed: slow noise decides forest or open
+  ground, jittered cells place trees, and each chunk rolls for wrecked tanks. Chunks are pure functions of the seed, so the
+  cache can be dropped at any time and nothing is stored. Trees and tanks are circles to collision. Actors slide around
+  them and big actors count as slim so they fit between trees. Bullets stop on them; enemy 5's ball does not. The start and
+  the boss arena are kept clear.
 - The hostage is placed at a random angle, 85 to 115% of `hostageDistance` from the start.
 - Enemies appear just outside the view at intervals that shorten over time. Enemy 1 is a weighted rarity
-  (`enemy1Chance`) with more health and damage. Enemies far behind the player despawn, which is what makes running
+  (`enemy1Chance`) with more health and damage. Enemy 5 is rarer still (`enemy5Chance`) and cannot appear in the first 40
+  seconds. It walks like a melee enemy and every `fireInterval` seconds locks a line for half a second, then throws a ball
+  whose texture, size, speed and damage come from that map's `ball` role. Enemies far behind the player despawn, which is what makes running
   away work.
 - Every regular kill lights a wedge `hintSpread` degrees wide. Its centre is offset randomly by up to 40% of the
   width, so the true direction is always inside it, but never reliably in the middle.
@@ -39,8 +48,8 @@ are deleted on every commit. A monotonically increasing `revision` gives optimis
 - Destroyed regular enemies drop XP orbs (`xp` per role). Orbs drift to a nearby player and vanish if left far behind. At
   `xpToUpgrade` the state becomes `levelup`, which `step` ignores, so the world is truly frozen until `applyUpgrade`. XP
   over the threshold carries over and can open the menu again at once.
-- Upgrades belong to the run (`s.gun`, `s.companions`, `player.maxHp`) and never change the admin's config: pump gun, more
-  damage, more health, one more companion (at most six), and bullets piercing one more enemy. Companions keep their own
+- Upgrades belong to the run (`s.gun`, `s.companions`, `player.maxHp`) and never change the admin's config: pump gun, a
+  percentage more of base damage (additive), more health, one more companion (at most six), and bullets piercing one more enemy. Companions keep their own
   plain gun.
 - The boss sleeps until the player enters the arena or shoots it, cannot leave the arena, and heals if the player
   runs far enough to make it go home. Under half health its attacks speed up.

@@ -12,7 +12,8 @@ No build step, no bundler, no framework in the browser: `public/` is served as w
 ```
 public/index.html, js/main.js      Game page: applies layout, input, game loop, HUD
 public/js/sim.js                   Game rules. No DOM. Runs headless in tests
-public/js/render.js                Canvas drawing and the built-in default art
+public/js/scenery.js               Forest obstacles: seeded chunks, collision and lookup. No DOM
+public/js/render.js                Canvas drawing and the built-in default art for each map
 public/js/joystick.js              Pointer Events joystick (one instance each for moving and aiming)
 public/js/schema.js                Editable config: defaults, limits, validation. Shared by server and admin UI
 public/admin.html, js/admin.js     Admin editor
@@ -51,7 +52,12 @@ docker compose up -d --build  # deploy
   translucent panels and uppercase micro-labels.
 - Upgrades live in the run state, never in `s.cfg`. Tests and live code both read base stats from `s.cfg` at fire time.
 - Only `Game.onKey`'s level-up branch may handle keys during the menu: Enter must never reach the restart path.
-- Sprites only change through `/api/admin/sprites/:role`. `PUT /api/admin/config` rejects a `sprite` key on purpose.
+- A game runs on `mapConfig(config, mapId)`: shared `site` and `gameplay` plus one map's `characters`. Never read
+  `config.characters`; it no longer exists at the top level.
+- `ball` is a role with a texture and stats but no name. Use `NAMED_ROLES` wherever a name is shown or validated.
+- Obstacle positions come only from `scenery.js`, so rules and drawing cannot disagree. Keep whole obstacles inside their
+  chunk: the lookups depend on it.
+- Sprites only change through `/api/admin/sprites/:map/:role`. `PUT /api/admin/config` rejects a `sprite` key on purpose.
 
 ## Never do
 
@@ -78,6 +84,10 @@ docker compose up -d --build  # deploy
 - Any image format is converted to PNG in the admin's browser, so formats depend on that browser (HEIC opens in Safari,
   usually not in Chrome). Do not add server-side image decoders for this: the server accepting only sanitised PNG is a
   security property.
+- Flat configs from before maps become the first map in `Store.upgrade`. The 10/40 XP swap runs only on that flat form, so an
+  admin who later picks those values keeps them.
+- `upgradeDamage` is a percentage of base damage and stacks additively (`s.gun.damagePercent`).
+- Enemy 5 cannot spawn in the first 40 seconds of a run (`ENEMY5_EARLIEST`). Spawn tests must set `s.time`.
 - Removing or renaming a config option needs a mapping in `Store.upgrade`. A stored value that no longer validates makes
   the whole file count as corrupt, so it gets moved aside and the game falls back to defaults.
 - nginx cannot verify IP SANs, so a proxy pinning the upstream certificate must use `proxy_ssl_name localhost`.

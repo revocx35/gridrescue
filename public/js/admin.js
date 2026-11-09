@@ -2,7 +2,7 @@
 import { ImageConversionError, imageToPng } from './image-convert.js';
 import { defaultSprite } from './render.js';
 import {
-  CHARACTER_FIELDS, GAMEPLAY_FIELDS, MAX_NAME_LENGTH, ORDER_FIELDS, ORDER_LABELS, ROLES, ROLE_FIELDS, ROLE_LABELS,
+  CHARACTER_FIELDS, GAMEPLAY_FIELDS, MAPS, MAX_MAP_NAME_LENGTH, MAX_NAME_LENGTH, NAMED_ROLES, ORDER_FIELDS, ORDER_LABELS, ROLES, ROLE_FIELDS, ROLE_LABELS,
   SITE_CHOICE_FIELDS, SITE_COLOR_FIELDS, SITE_NUMBER_FIELDS, SITE_TEXT_FIELDS,
 } from './schema.js';
 
@@ -24,6 +24,7 @@ let csrf = '';
 let revision = 0;
 let draft = null;
 let sprites = {};
+let currentMap = MAPS[0];
 let dirty = false;
 let previewMode = 'desktop';
 let renderPreview = () => {};
@@ -44,10 +45,13 @@ function markDirty() {
 function adoptServerState(data, { keepDraft = false } = {}) {
   csrf = data.csrf;
   revision = data.revision;
-  sprites = Object.fromEntries(ROLES.map((role) => [role, data.config.characters[role].sprite]));
+  sprites = Object.fromEntries(MAPS.map((mapId) => [
+    mapId,
+    Object.fromEntries(ROLES.map((role) => [role, data.config.maps[mapId].characters[role].sprite])),
+  ]));
   if (keepDraft) return;
   draft = structuredClone(data.config);
-  for (const role of ROLES) delete draft.characters[role].sprite;
+  for (const mapId of MAPS) for (const role of ROLES) delete draft.maps[mapId].characters[role].sprite;
   dirty = false;
   $('save').disabled = true;
   $('brand-title').textContent = draft.site.title;
@@ -109,10 +113,13 @@ function textField(label, max, value, onChange, wide = false) {
 
 // ---- characters ----
 
+const currentCharacters = () => draft.maps[currentMap].characters;
+const roleTitle = (mapId, role) => draft.maps[mapId].characters[role].name ?? ROLE_LABELS[role];
+
 function spriteCanvas(role) {
   const canvas = el('canvas', { class: 'sprite-preview', width: 208, height: 208 });
   const ctx = canvas.getContext('2d');
-  const hash = sprites[role];
+  const hash = sprites[currentMap][role];
   const place = (source, w, h) => {
     const k = 208 / Math.max(w, h);
     ctx.clearRect(0, 0, 208, 208);
@@ -123,51 +130,53 @@ function spriteCanvas(role) {
     image.onload = () => place(image, image.naturalWidth, image.naturalHeight);
     image.src = `/sprites/${hash}.png`;
   } else {
-    place(defaultSprite(role), 256, 256);
+    place(defaultSprite(currentMap, role), 256, 256);
   }
   return canvas;
 }
 
-async function uploadSprite(role, file) {
+async function uploadSprite(mapId, role, file) {
   setStatus(`Preparing ${file.name}…`);
   try {
     const png = await imageToPng(file);
     setStatus(`Uploading ${file.name}…`);
-    adoptServerState(await api('PUT', `/api/admin/sprites/${role}`, png, 'image/png'), { keepDraft: true });
+    adoptServerState(await api('PUT', `/api/admin/sprites/${mapId}/${role}`, png, 'image/png'), { keepDraft: true });
     renderCharacters();
-    setStatus(`Sprite updated for ${draft.characters[role].name}.${dirty ? ' You still have unsaved changes.' : ''}`, 'good');
+    setStatus(`Image updated for ${roleTitle(mapId, role)}.${dirty ? ' You still have unsaved changes.' : ''}`, 'good');
   } catch (error) {
     setStatus(explain(error), 'error');
   }
 }
 
-async function removeSprite(role) {
+async function removeSprite(mapId, role) {
   try {
-    adoptServerState(await api('DELETE', `/api/admin/sprites/${role}`), { keepDraft: true });
+    adoptServerState(await api('DELETE', `/api/admin/sprites/${mapId}/${role}`), { keepDraft: true });
     renderCharacters();
-    setStatus(`Back to the default art for ${draft.characters[role].name}.${dirty ? ' You still have unsaved changes.' : ''}`, 'good');
+    setStatus(`Back to the default art for ${roleTitle(mapId, role)}.${dirty ? ' You still have unsaved changes.' : ''}`, 'good');
   } catch (error) {
     setStatus(explain(error), 'error');
   }
 }
 
 function characterCard(role) {
-  const ch = draft.characters[role];
+  const mapId = currentMap;
+  const ch = currentCharacters()[role];
+  const hasImage = Boolean(sprites[mapId][role]);
   const fileInput = el('input', {
     // No `accept` filter: with one, phones open the photo picker instead of their file browser.
     type: 'file', class: 'visually-hidden',
-    on: { change: (e) => { if (e.target.files[0]) uploadSprite(role, e.target.files[0]); e.target.value = ''; } },
+    on: { change: (e) => { if (e.target.files[0]) uploadSprite(mapId, role, e.target.files[0]); e.target.value = ''; } },
   });
   fileInput.setAttribute('aria-label', `Upload an image for ${ROLE_LABELS[role]}`);
   const side = el(
     'div', { class: 'char-side' },
     spriteCanvas(role),
-    el('span', { class: 'micro sprite-state', textContent: sprites[role] ? 'Your image' : 'Default art' }),
+    el('span', { class: 'micro sprite-state', textContent: hasImage ? 'Your image' : 'Default art' }),
     el('button', { class: 'btn', type: 'button', textContent: 'Upload file', on: { click: () => fileInput.click() } }),
     fileInput,
   );
-  if (sprites[role]) {
-    side.append(el('button', { class: 'btn', type: 'button', textContent: 'Remove', on: { click: () => removeSprite(role) } }));
+  if (hasImage) {
+    side.append(el('button', { class: 'btn', type: 'button', textContent: 'Remove', on: { click: () => removeSprite(mapId, role) } }));
   }
   const stats = el('div', { class: 'field-grid' });
   for (const field of ROLE_FIELDS[role]) {
@@ -181,14 +190,36 @@ function characterCard(role) {
     el(
       'div', { class: 'char-fields' },
       el('p', { class: 'micro char-role', textContent: ROLE_LABELS[role] }),
-      textField('Name', MAX_NAME_LENGTH, ch.name, (value) => { ch.name = value; markDirty(); }),
+      ...(NAMED_ROLES.includes(role) ? [textField('Name', MAX_NAME_LENGTH, ch.name, (value) => { ch.name = value; markDirty(); })] : []),
       stats,
     ),
   );
 }
 
+function mapBar() {
+  const buttons = MAPS.map((mapId) => {
+    const button = el('button', {
+      class: 'btn', type: 'button', textContent: draft.maps[mapId].name || mapId,
+      on: { click: () => { currentMap = mapId; renderCharacters(); } },
+    });
+    button.setAttribute('aria-pressed', String(mapId === currentMap));
+    return button;
+  });
+  const active = buttons[MAPS.indexOf(currentMap)];
+  const map = draft.maps[currentMap];
+  return el(
+    'div', { class: 'panel map-bar' },
+    el('div', { class: 'map-switch' }, el('span', { class: 'micro', textContent: 'Editing map' }), el('div', { class: 'map-switch-buttons' }, ...buttons)),
+    textField('Map name', MAX_MAP_NAME_LENGTH, map.name, (value) => {
+      map.name = value;
+      active.textContent = value || currentMap;
+      markDirty();
+    }),
+  );
+}
+
 function renderCharacters() {
-  $('tab-characters').replaceChildren(el('div', { class: 'grid-cards' }, ...ROLES.map(characterCard)));
+  $('tab-characters').replaceChildren(mapBar(), el('div', { class: 'grid-cards' }, ...ROLES.map(characterCard)));
 }
 
 // ---- site menu ----

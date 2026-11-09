@@ -89,6 +89,12 @@ body {
 }
 .tab[aria-selected="true"] { color: var(--text); border-bottom-color: var(--accent); }
 
+.map-bar { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; margin-bottom: 12px; padding: 14px; }
+.map-switch { display: grid; gap: 4px; }
+.map-switch-buttons { display: flex; flex-wrap: wrap; gap: 6px; }
+.map-switch .btn[aria-pressed="true"] { border-color: var(--accent); }
+.map-bar .field { flex: 1 1 200px; }
+
 .grid-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(340px, 100%), 1fr)); gap: 12px; }
 
 .char-card { display: grid; grid-template-columns: 104px minmax(0, 1fr); gap: 14px; padding: 14px; }

@@ -2,7 +2,12 @@
 // Imported by the server (authoritative validation) and the admin UI (form limits),
 // so a field only ever has to be described here.
 
-export const ROLES = ['player', 'companion', 'hostage', 'enemy1', 'enemy2', 'boss'];
+export const MAPS = ['grid', 'forest'];
+
+export const ROLES = ['player', 'companion', 'hostage', 'enemy1', 'enemy2', 'boss', 'enemy5', 'ball'];
+
+/** Everything except the ball, which is a projectile with a texture and no name. */
+export const NAMED_ROLES = ROLES.filter((role) => role !== 'ball');
 
 export const ROLE_LABELS = {
   player: 'Player',
@@ -11,6 +16,8 @@ export const ROLE_LABELS = {
   enemy1: 'Enemy 1 (strong, rare)',
   enemy2: 'Enemy 2 (weak, common)',
   boss: 'Enemy 3 (boss)',
+  enemy5: 'Enemy 5 (strongest, rarest)',
+  ball: 'Enemy 5 large ball',
 };
 
 const COMBAT = ['size', 'hp', 'speed', 'damage'];
@@ -21,6 +28,8 @@ export const ROLE_FIELDS = {
   enemy1: [...COMBAT, 'xp', 'attackType'],
   enemy2: [...COMBAT, 'xp', 'attackType'],
   boss: [...COMBAT, 'attackType'],
+  enemy5: [...COMBAT, 'xp', 'fireInterval'],
+  ball: ['size', 'speed', 'damage'],
 };
 
 export const CHARACTER_FIELDS = {
@@ -45,11 +54,12 @@ export const GAMEPLAY_FIELDS = {
   hintSpread: { label: 'Direction light width (degrees)', min: 10, max: 170, step: 1 },
   spawnInterval: { label: 'Seconds between enemy spawns', min: 0.1, max: 20, step: 0.05 },
   enemy1Chance: { label: 'Chance a spawn is Enemy 1 (0 to 1)', min: 0, max: 1, step: 0.01 },
+  enemy5Chance: { label: 'Chance a spawn is Enemy 5 (0 to 1)', min: 0, max: 1, step: 0.01 },
   maxEnemies: { label: 'Most enemies at once', min: 1, max: 120, step: 1 },
   attackRange: { label: 'Auto-attack range', min: 100, max: 1500, step: 10 },
   arenaRadius: { label: 'Boss arena radius', min: 250, max: 2000, step: 10 },
   xpToUpgrade: { label: 'XP needed for each upgrade', min: 1, max: 100000, step: 1 },
-  upgradeDamage: { label: 'Damage added by the upgrade', min: 1, max: 5000, step: 1 },
+  upgradeDamage: { label: 'Damage upgrade (% of base damage)', min: 1, max: 5000, step: 1 },
   upgradeHealth: { label: 'Health added by the upgrade', min: 1, max: 100000, step: 1 },
 };
 
@@ -89,6 +99,38 @@ export const ORDER_FIELDS = {
 export const ORDER_LABELS = { title: 'Game title', game: 'Game', joystick: 'Joystick controls' };
 
 export const MAX_NAME_LENGTH = 32;
+export const MAX_MAP_NAME_LENGTH = 32;
+
+const NAMES = {
+  grid: {
+    map: 'The Grid', player: 'Runner', companion: 'Scout', hostage: 'Hostage',
+    enemy1: 'Brute', enemy2: 'Stalker', boss: 'Warden', enemy5: 'Overseer',
+  },
+  forest: {
+    map: 'Burnt Forest', player: 'Ranger', companion: 'Hound', hostage: 'Pilot',
+    enemy1: 'Ironback', enemy2: 'Scavenger', boss: 'Tank Lord', enemy5: 'Colossus',
+  },
+};
+
+function defaultCharacters(map) {
+  const names = NAMES[map];
+  return {
+    player: { name: names.player, sprite: null, size: 46, hp: 100, speed: 255, damage: 18, fireInterval: 0.26 },
+    companion: { name: names.companion, sprite: null, size: 40, hp: 80, speed: 285, damage: 10, fireInterval: 0.4 },
+    hostage: { name: names.hostage, sprite: null, size: 44 },
+    enemy1: { name: names.enemy1, sprite: null, size: 62, hp: 130, speed: 135, damage: 20, xp: 40, attackType: 'melee' },
+    enemy2: { name: names.enemy2, sprite: null, size: 36, hp: 32, speed: 180, damage: 8, xp: 10, attackType: 'melee' },
+    boss: { name: names.boss, sprite: null, size: 118, hp: 1500, speed: 120, damage: 13, attackType: 'pump' },
+    enemy5: { name: names.enemy5, sprite: null, size: 96, hp: 650, speed: 90, damage: 30, xp: 150, fireInterval: 3 },
+    ball: { sprite: null, size: 92, speed: 260, damage: 35 },
+  };
+}
+
+/** The settings one game runs with: the shared rules plus that map's characters. */
+export function mapConfig(config, mapId) {
+  const map = config.maps[mapId];
+  return { site: config.site, gameplay: config.gameplay, mapId, name: map.name, characters: map.characters };
+}
 
 export function defaultConfig() {
   return {
@@ -114,14 +156,7 @@ export function defaultConfig() {
         accent2: '#ffb347',
       },
     },
-    characters: {
-      player: { name: 'Runner', sprite: null, size: 46, hp: 100, speed: 255, damage: 18, fireInterval: 0.26 },
-      companion: { name: 'Scout', sprite: null, size: 40, hp: 80, speed: 285, damage: 10, fireInterval: 0.4 },
-      hostage: { name: 'Hostage', sprite: null, size: 44 },
-      enemy1: { name: 'Brute', sprite: null, size: 62, hp: 130, speed: 135, damage: 20, xp: 10, attackType: 'melee' },
-      enemy2: { name: 'Stalker', sprite: null, size: 36, hp: 32, speed: 180, damage: 8, xp: 40, attackType: 'melee' },
-      boss: { name: 'Warden', sprite: null, size: 118, hp: 1500, speed: 120, damage: 13, attackType: 'pump' },
-    },
+    maps: Object.fromEntries(MAPS.map((map) => [map, { name: NAMES[map].map, characters: defaultCharacters(map) }])),
     gameplay: {
       hostageDistance: 5200,
       companionKills: 8,
@@ -130,6 +165,7 @@ export function defaultConfig() {
       hintSpread: 55,
       spawnInterval: 1.15,
       enemy1Chance: 0.14,
+      enemy5Chance: 0.04,
       maxEnemies: 36,
       attackRange: 450,
       arenaRadius: 560,
@@ -173,16 +209,42 @@ function readNumber(value, path, spec, errors) {
   return value;
 }
 
+function readCharacters(input, path, errors) {
+  const characters = isObject(input) ? input : {};
+  if (!isObject(input)) errors.push(`${path}: is required`);
+  checkKeys(characters, ROLES, path, errors);
+  const out = {};
+  for (const role of ROLES) {
+    const where = `${path}.${role}`;
+    const ch = isObject(characters[role]) ? characters[role] : {};
+    if (!isObject(characters[role])) errors.push(`${where}: is required`);
+    const named = NAMED_ROLES.includes(role);
+    checkKeys(ch, [...(named ? ['name'] : []), ...ROLE_FIELDS[role]], where, errors);
+    const clean = named ? { name: readText(ch.name, `${where}.name`, MAX_NAME_LENGTH, true, errors) } : {};
+    for (const field of ROLE_FIELDS[role]) {
+      const spec = CHARACTER_FIELDS[field];
+      if (spec.options) {
+        if (!spec.options.includes(ch[field])) errors.push(`${where}.${field}: invalid choice`);
+        clean[field] = ch[field];
+      } else {
+        clean[field] = readNumber(ch[field], `${where}.${field}`, spec, errors);
+      }
+    }
+    out[role] = clean;
+  }
+  return out;
+}
+
 /**
- * Validates an admin-submitted config (site, characters, gameplay). Sprites are managed through
+ * Validates an admin-submitted config (site, maps with their characters, gameplay). Sprites are managed through
  * their own upload endpoint, so a `sprite` key is rejected here like any other unknown field.
  * Returns { ok: true, value } or { ok: false, errors }.
  */
 export function validateConfig(input) {
   const errors = [];
-  const value = { site: { colors: {} }, characters: {}, gameplay: {} };
+  const value = { site: { colors: {} }, maps: {}, gameplay: {} };
   if (!isObject(input)) return { ok: false, errors: ['config: must be an object'] };
-  checkKeys(input, ['site', 'characters', 'gameplay'], 'config', errors);
+  checkKeys(input, ['site', 'maps', 'gameplay'], 'config', errors);
 
   const site = isObject(input.site) ? input.site : {};
   if (!isObject(input.site)) errors.push('site: is required');
@@ -227,24 +289,18 @@ export function validateConfig(input) {
     value.site.colors[key] = String(colors[key]).toLowerCase();
   }
 
-  const characters = isObject(input.characters) ? input.characters : {};
-  if (!isObject(input.characters)) errors.push('characters: is required');
-  checkKeys(characters, ROLES, 'characters', errors);
-  for (const role of ROLES) {
-    const ch = isObject(characters[role]) ? characters[role] : {};
-    if (!isObject(characters[role])) errors.push(`characters.${role}: is required`);
-    checkKeys(ch, ['name', ...ROLE_FIELDS[role]], `characters.${role}`, errors);
-    const out = { name: readText(ch.name, `characters.${role}.name`, MAX_NAME_LENGTH, true, errors) };
-    for (const field of ROLE_FIELDS[role]) {
-      const spec = CHARACTER_FIELDS[field];
-      if (spec.options) {
-        if (!spec.options.includes(ch[field])) errors.push(`characters.${role}.${field}: invalid choice`);
-        out[field] = ch[field];
-      } else {
-        out[field] = readNumber(ch[field], `characters.${role}.${field}`, spec, errors);
-      }
-    }
-    value.characters[role] = out;
+  const maps = isObject(input.maps) ? input.maps : {};
+  if (!isObject(input.maps)) errors.push('maps: is required');
+  checkKeys(maps, MAPS, 'maps', errors);
+  for (const mapId of MAPS) {
+    const path = `maps.${mapId}`;
+    const map = isObject(maps[mapId]) ? maps[mapId] : {};
+    if (!isObject(maps[mapId])) errors.push(`${path}: is required`);
+    checkKeys(map, ['name', 'characters'], path, errors);
+    value.maps[mapId] = {
+      name: readText(map.name, `${path}.name`, MAX_MAP_NAME_LENGTH, true, errors),
+      characters: readCharacters(map.characters, `${path}.characters`, errors),
+    };
   }
 
   const gameplay = isObject(input.gameplay) ? input.gameplay : {};

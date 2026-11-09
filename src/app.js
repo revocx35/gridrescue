@@ -6,7 +6,7 @@ import cookie from '@fastify/cookie';
 import fastifyStatic from '@fastify/static';
 import rateLimit from '@fastify/rate-limit';
 import * as oidcClient from 'openid-client';
-import { ROLES, validateConfig } from '../public/js/schema.js';
+import { MAPS, ROLES, validateConfig } from '../public/js/schema.js';
 import { InvalidPng, MAX_SPRITE_BYTES, sanitizePng } from './png.js';
 import { PENDING_LOGIN_MS, SESSION_ABSOLUTE_MS, randomToken, safeEqual } from './sessions.js';
 
@@ -220,15 +220,15 @@ export async function createApp(options) {
     return adminState(request.session);
   });
 
-  const roleOf = (request, reply) => {
-    if (ROLES.includes(request.params.role)) return request.params.role;
+  /** True when the URL names a real map and role; otherwise answers 404. */
+  const knownSlot = ({ params }, reply) => {
+    if (MAPS.includes(params.map) && ROLES.includes(params.role)) return true;
     reply.code(404).send({ error: 'not_found' });
-    return null;
+    return false;
   };
 
-  app.put('/api/admin/sprites/:role', writeRoute({ bodyLimit: MAX_SPRITE_BYTES }), async (request, reply) => {
-    const role = roleOf(request, reply);
-    if (!role) return reply;
+  app.put('/api/admin/sprites/:map/:role', writeRoute({ bodyLimit: MAX_SPRITE_BYTES }), async (request, reply) => {
+    if (!knownSlot(request, reply)) return reply;
     if (request.headers['content-type'] !== 'image/png') {
       return reply.code(415).send({ error: 'unsupported_type' });
     }
@@ -239,14 +239,13 @@ export async function createApp(options) {
       if (!(err instanceof InvalidPng)) throw err;
       return reply.code(422).send({ error: 'invalid_png' });
     }
-    store.setSprite(role, png);
+    store.setSprite(request.params.map, request.params.role, png);
     return adminState(request.session);
   });
 
-  app.delete('/api/admin/sprites/:role', writeRoute(), async (request, reply) => {
-    const role = roleOf(request, reply);
-    if (!role) return reply;
-    store.clearSprite(role);
+  app.delete('/api/admin/sprites/:map/:role', writeRoute(), async (request, reply) => {
+    if (!knownSlot(request, reply)) return reply;
+    store.clearSprite(request.params.map, request.params.role);
     return adminState(request.session);
   });
 
