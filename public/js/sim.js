@@ -20,7 +20,6 @@ const ENEMY5_EARLIEST = 40; // seconds into a run, so nobody meets the strongest
 const JET_EARLIEST = 60;
 const MISSILE_TTL = 8;
 const MISSILE_TURN_RATE = 2.4; // radians per second: fast enough to chase, slow enough to sidestep
-const MISSILE_AIM_BIAS = 0.55; // auto-aim treats missiles as this much closer, since they must be shot down
 const JET_MAX_LIFE = 30;
 const BALL_TELEGRAPH = 0.5;
 const BALL_TTL = 5;
@@ -101,11 +100,7 @@ function nearestEnemy(s, from, range) {
   }
   if (s.boss.alive) {
     const d = dist(from, s.boss) - s.boss.r * 0.6;
-    if (d < bestD) { best = s.boss; bestD = d; }
-  }
-  for (const m of s.missiles) {
-    const d = dist(from, m) * MISSILE_AIM_BIAS;
-    if (d < bestD) { best = m; bestD = d; }
+    if (d < bestD) best = s.boss;
   }
   return best;
 }
@@ -311,13 +306,11 @@ function spawnJet(s, x, y) {
 
 function launchMissile(s, jet) {
   const ch = s.cfg.characters.missile;
-  const factor = enemyFactor(s);
   s.missiles.push({
     x: jet.x, y: jet.y,
     vx: jet.vx, vy: jet.vy,
-    heading: jet.heading, flash: 0,
-    hp: ch.hp * factor, maxHp: ch.hp * factor,
-    r: radius(ch.size), damage: ch.damage * factor, ttl: MISSILE_TTL,
+    heading: jet.heading,
+    r: radius(ch.size), damage: ch.damage * enemyFactor(s), ttl: MISSILE_TTL,
   });
 }
 
@@ -333,10 +326,21 @@ function updateJet(s, e, dt) {
   }
 }
 
-function hurtMissile(s, m, damage) {
-  m.hp -= damage;
-  m.flash = 0.09;
-  if (m.hp > 0) return false;
+/**
+ * A click or tap at a world position destroys the nearest missile within reach. It is the only way to
+ * destroy one: bullets pass through. Returns whether a missile was hit.
+ */
+export function destroyMissileAt(s, x, y, reach) {
+  if (s.status !== 'playing') return false;
+  const point = { x, y };
+  let best = -1;
+  let bestD = Infinity;
+  s.missiles.forEach((m, index) => {
+    const d = dist(m, point);
+    if (d <= Math.max(reach, m.r) && d < bestD) { best = index; bestD = d; }
+  });
+  if (best < 0) return false;
+  const [m] = s.missiles.splice(best, 1);
   emit(s, 'missileDown', { x: m.x, y: m.y });
   return true;
 }
@@ -346,7 +350,6 @@ function updateMissiles(s, dt) {
   for (let i = s.missiles.length - 1; i >= 0; i--) {
     const m = s.missiles[i];
     m.ttl -= dt;
-    m.flash = Math.max(0, m.flash - dt);
     const wanted = Math.atan2(s.player.y - m.y, s.player.x - m.x);
     const turn = Math.atan2(Math.sin(wanted - m.heading), Math.cos(wanted - m.heading));
     m.heading += Math.sign(turn) * Math.min(Math.abs(turn), MISSILE_TURN_RATE * dt);
@@ -661,16 +664,12 @@ function updateShots(s, dt) {
     }
     // A shot stops at its first enemy unless it still has pierce left, and hits each enemy once.
     let spent = false;
-    const strike = (e, hurt = hurtEnemy) => {
+    const strike = (e) => {
       (p.struck ??= new Set()).add(e);
       if ((p.pierce ?? 0) > 0) p.pierce -= 1;
       else spent = true;
-      return hurt(s, e, p.damage);
+      return hurtEnemy(s, e, p.damage);
     };
-    for (let j = s.missiles.length - 1; j >= 0 && !spent; j--) {
-      const m = s.missiles[j];
-      if (!p.struck?.has(m) && dist(p, m) < m.r + 6 && strike(m, hurtMissile)) s.missiles.splice(j, 1);
-    }
     for (let j = s.enemies.length - 1; j >= 0 && !spent; j--) {
       const e = s.enemies[j];
       if (!p.struck?.has(e) && dist(p, e) < e.r + 6 && strike(e)) s.enemies.splice(j, 1);

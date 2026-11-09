@@ -33,7 +33,7 @@ export const ROLE_FIELDS = {
   enemy5: ['enabled', ...COMBAT, 'xp', 'fireInterval'],
   ball: ['size', 'speed', 'damage'],
   jet: ['enabled', 'size', 'hp', 'speed', 'xp', 'fireInterval'],
-  missile: ['size', 'hp', 'speed', 'damage'],
+  missile: ['size', 'speed', 'damage'],
 };
 
 const REGULAR_ENEMIES = ['enemy1', 'enemy2', 'enemy5'];
@@ -135,7 +135,7 @@ function defaultCharacters(map) {
     enemy5: { name: names.enemy5, sprite: null, enabled: true, size: 96, hp: 650, speed: 90, damage: 30, xp: 150, fireInterval: 3 },
     ball: { sprite: null, size: 92, speed: 260, damage: 35 },
     jet: { name: names.jet, sprite: null, enabled: true, size: 120, hp: 260, speed: 430, xp: 100, fireInterval: 1.4 },
-    missile: { sprite: null, size: 46, hp: 30, speed: 300, damage: 40 },
+    missile: { sprite: null, size: 46, speed: 300, damage: 40 },
   };
 }
 

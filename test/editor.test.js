@@ -55,6 +55,7 @@ describe('config validation', () => {
   });
   rejects('a negative difficulty increase', (c) => { c.gameplay.difficultyIncrease = -1; });
   rejects('zero kills per difficulty level', (c) => { c.gameplay.difficultyKills = 0; });
+  rejects('health on the missile', (c) => { c.maps.grid.characters.missile.hp = 30; });
   rejects('a name on the missile', (c) => { c.maps.grid.characters.missile.name = 'x'; });
   rejects('a name on the ball', (c) => { c.maps.grid.characters.ball.name = 'Ball'; });
   rejects('characters outside a map', (c) => { c.characters = c.maps.grid.characters; });
@@ -334,6 +335,16 @@ describe('config upgrades', () => {
     }));
     assert.equal(config.maps.grid.characters.enemy1.xp, 77);
     assert.equal(config.maps.grid.characters.enemy2.xp, 5);
+  });
+
+  it('drops the missile health setting saved by earlier versions, keeping everything else', async () => {
+    const stored = defaultConfig();
+    stored.maps.grid.characters.missile.hp = 30;
+    stored.maps.grid.characters.missile.damage = 77;
+    const { config, corrupt } = await reopen(stored);
+    assert.equal(corrupt, false);
+    assert.equal(config.maps.grid.characters.missile.damage, 77);
+    assert.equal('hp' in config.maps.grid.characters.missile, false);
   });
 
   it('does not swap XP again once the config has maps', async () => {

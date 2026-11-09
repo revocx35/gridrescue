@@ -34,10 +34,11 @@ are deleted on every commit. A monotonically increasing `revision` gives optimis
   the hostage is free from the start.
 - The difficulty level is `1 + floor(kills / difficultyKills)`. Each level adds `difficultyIncrease` percent of the base health,
   damage and XP. Spawns take the level they appear at; the boss is rescaled
-  when the level changes, keeping its share of health. Projectiles gain damage, and missiles also health. Speed and size never change.
+  when the level changes, keeping its share of health. Projectiles gain damage. Speed and size never change.
 - The Su-34 replaces a regular spawn at `jetChance`, one at a time and not in the first minute. It flies a straight line past the
   player, launching a Kh-29 every `fireInterval` seconds while in view. Missiles home with a limited turn rate, ignore obstacles,
-  expire after 8 seconds and are favoured by auto-aim. Shooting one down gives no kill and no XP.
+  expire after 8 seconds, and are ignored by bullets and auto-aim. Only a click or tap on one destroys it, which gives no kill
+  and no XP.
 - The hostage is placed at a random angle, 85 to 115% of `hostageDistance` from the start.
 - Enemies appear just outside the view at intervals that shorten over time. Enemy 1 is a weighted rarity
   (`enemy1Chance`) with more health and damage. Enemy 5 is rarer still (`enemy5Chance`) and cannot appear in the first 40

@@ -332,6 +332,12 @@ export class Renderer {
     this.sprites = sprites;
   }
 
+  /** The world position under a point given in CSS pixels from the canvas's top-left corner. */
+  toWorld(x, y) {
+    const cam = this.camera ?? { x: 0, y: 0 };
+    return { x: cam.x + (x - this.width / 2) / this.scale, y: cam.y + (y - this.height / 2) / this.scale };
+  }
+
   /** Where a world position appears, in CSS pixels from the canvas's top-left corner. */
   toScreen(x, y) {
     const cam = this.camera ?? { x, y };
@@ -623,13 +629,12 @@ export class Renderer {
       disc(ctx, m.x - Math.cos(m.heading) * size * 0.55, m.y - Math.sin(m.heading) * size * 0.55, size * (0.14 + Math.random() * 0.1));
       ctx.globalAlpha = 1;
       this.#drawHeaded(ctx, 'missile', m, size, 8);
-      // A pulsing ring marks it as something to shoot.
+      // A pulsing ring marks it as something to click.
       ctx.strokeStyle = 'rgba(255,77,94,0.8)';
       ctx.lineWidth = 2;
       ctx.beginPath();
       ctx.arc(m.x, m.y, size * 0.62 + Math.sin(this.clock * 10) * 3, 0, TAU);
       ctx.stroke();
-      this.#miniHealth(ctx, m, m.y - size * 0.8, size, '#ff6b78');
     }
   }
 

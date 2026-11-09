@@ -3,10 +3,12 @@ import { Joystick } from './joystick.js';
 import { fetchBoard, postScore, renderBoard, startRun } from './leaderboard.js';
 import { Renderer, drawSpriteInBox, loadSprites } from './render.js';
 import { MAPS, MAX_SCORE_NAME_LENGTH, NAMED_ROLES, mapConfig } from './schema.js';
-import { applyUpgrade, availableUpgrades, createGame, step } from './sim.js';
+import { applyUpgrade, availableUpgrades, createGame, destroyMissileAt, step } from './sim.js';
 
 const FIXED_STEP = 1 / 60;
 const NAME_KEY = 'gridrescue-name';
+// How far from a missile a press still counts, in CSS pixels. Fingers are less exact than a cursor.
+const MISSILE_REACH = { touch: 44, mouse: 28 };
 const $ = (id) => document.getElementById(id);
 const SECTION_IDS = { title: 'section-title', game: 'section-game', joystick: 'section-joystick' };
 
@@ -149,6 +151,7 @@ class Game {
     new ResizeObserver(() => this.renderer.resize()).observe($('section-game'));
 
     $('overlay-action').addEventListener('click', () => this.onOverlayAction());
+    $('game').addEventListener('pointerdown', (e) => this.onCanvasPress(e));
     $('pause-btn').addEventListener('click', () => this.pause());
     $('score-form').addEventListener('submit', (e) => this.onScoreSubmit(e));
     $('score-name').maxLength = MAX_SCORE_NAME_LENGTH;
@@ -159,6 +162,16 @@ class Game {
     });
     this.showMenu();
     requestAnimationFrame((t) => this.frame(t));
+  }
+
+  onCanvasPress(event) {
+    if (this.mode !== 'playing' || event.button !== 0) return;
+    const box = $('game').getBoundingClientRect();
+    const { x, y } = this.renderer.toWorld(event.clientX - box.left, event.clientY - box.top);
+    const reach = (MISSILE_REACH[event.pointerType] ?? MISSILE_REACH.mouse) / this.renderer.scale;
+    if (destroyMissileAt(this.state, x, y, reach)) {
+      for (const gameEvent of this.state.events.splice(0)) this.handleEvent(gameEvent);
+    }
   }
 
   useMap(mapId, sprites, firstTime = false) {
@@ -434,7 +447,7 @@ class Game {
         this.hintExplained = true;
         break;
       case 'jet':
-        this.toast(`${this.names.jet} incoming. Shoot down its missiles!`, 3.2);
+        this.toast(`${this.names.jet} incoming. ${isMobile() ? 'Tap' : 'Click'} its missiles to destroy them!`, 3.2);
         break;
       case 'difficulty':
         this.toast(`Difficulty level ${event.level}`);

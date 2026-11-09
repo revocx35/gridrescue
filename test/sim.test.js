@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { defaultConfig, mapConfig } from '../public/js/schema.js';
 import { forEachItemIn, hitsSolid } from '../public/js/scenery.js';
-import { applyUpgrade, availableUpgrades, createGame, scoreLimits, step } from '../public/js/sim.js';
+import { applyUpgrade, availableUpgrades, createGame, destroyMissileAt, scoreLimits, step } from '../public/js/sim.js';
 
 const DT = 1 / 60;
 
@@ -1086,7 +1086,7 @@ describe('Su-34 and Kh-29', () => {
     s.enemies.length = 0;
     s.missiles.length = 0;
     const ch = s.cfg.characters.missile;
-    const m = { x: 300, y: 0, vx: -ch.speed, vy: 0, heading: Math.PI, flash: 0, hp: ch.hp, maxHp: ch.hp, r: ch.size * 0.42, damage: ch.damage, ttl: 8 };
+    const m = { x: 300, y: 0, vx: -ch.speed, vy: 0, heading: Math.PI, r: ch.size * 0.42, damage: ch.damage, ttl: 8 };
     s.missiles.push(m);
     return { s, m, jet };
   };
@@ -1153,28 +1153,56 @@ describe('Su-34 and Kh-29', () => {
     assert.equal(s.missiles.length, 0);
   });
 
-  it('can be shot down, without counting as a kill', () => {
+  it('one click on a missile destroys it, without counting as a kill', () => {
     const { s, m } = onlyMissile();
-    m.hp = 1;
-    s.shots.push({ x: m.x, y: m.y, vx: 0, vy: 0, ttl: 1, damage: 5 });
-    step(s, DT, still);
+    assert.equal(destroyMissileAt(s, m.x + 5, m.y, 20), true);
     assert.equal(s.missiles.length, 0);
     assert.equal(s.kills, 0);
-    assert.equal(s.player.hp, s.player.maxHp);
+    assert.equal(s.orbs.length, 0);
+    assert.ok(s.events.some((event) => event.type === 'missileDown'));
   });
 
-  it('takes more than one ordinary shot by default', () => {
-    const { missile, player } = mapConfig(defaultConfig(), 'grid').characters;
-    assert.ok(missile.hp > player.damage);
+  it('a click that misses does nothing', () => {
+    const { s } = onlyMissile();
+    assert.equal(destroyMissileAt(s, 0, 300, 20), false);
+    assert.equal(s.missiles.length, 1);
   });
 
-  it('auto-aim goes for a missile before a closer enemy', () => {
-    const { s, m } = onlyMissile((c) => { c.characters.player.damage = 18; });
-    m.x = 300;
-    m.vx = 0;
-    placeEnemy(s, 'enemy2', 0, -220).speed = 0;
+  it('a click takes only the nearest missile', () => {
+    const { s, m } = onlyMissile();
+    const other = { ...m, x: m.x + 30 };
+    s.missiles.push(other);
+    destroyMissileAt(s, other.x - 2, other.y, 60);
+    assert.deepEqual(s.missiles, [m]);
+  });
+
+  it('a click covers the whole of a large missile', () => {
+    const { s, m } = onlyMissile();
+    m.r = 80;
+    assert.equal(destroyMissileAt(s, m.x + 70, m.y, 20), true);
+  });
+
+  it('clicks do nothing while the game is frozen', () => {
+    const { s, m } = onlyMissile();
+    s.status = 'levelup';
+    assert.equal(destroyMissileAt(s, m.x, m.y, 20), false);
+    assert.equal(s.missiles.length, 1);
+  });
+
+  it('bullets pass straight through a missile', () => {
+    const { s, m } = onlyMissile();
+    s.player.cool = 1e9;
+    const shot = { x: m.x, y: m.y, vx: 0, vy: 0, ttl: 1, damage: 1e6 };
+    s.shots.push(shot);
     step(s, DT, still);
-    assert.ok(s.shots[0].vx > 0 && Math.abs(s.shots[0].vy) < Math.abs(s.shots[0].vx));
+    assert.equal(s.missiles.length, 1);
+    assert.ok(s.shots.includes(shot));
+  });
+
+  it('auto-aim ignores missiles', () => {
+    const { s } = onlyMissile((c) => { c.characters.player.damage = 18; });
+    for (let i = 0; i < 20; i++) step(s, DT, still);
+    assert.equal(s.shots.length, 0);
   });
 
   it('runs out of fuel', () => {
@@ -1187,14 +1215,13 @@ describe('Su-34 and Kh-29', () => {
     assert.equal(s.player.hp, s.player.maxHp);
   });
 
-  it('missiles get tougher with difficulty, but no faster', () => {
+  it('missiles hit harder with difficulty, but go no faster', () => {
     const { s, jet } = withJet((c) => { c.gameplay.difficultyIncrease = 100; });
     s.level = 2;
     for (let i = 0; i < 60 * 3 && !s.missiles.length; i++) step(s, DT, still);
     const [m] = s.missiles;
     const ch = s.cfg.characters.missile;
     assert.ok(jet);
-    assert.equal(m.maxHp, ch.hp * 2);
     assert.equal(m.damage, ch.damage * 2);
     step(s, DT, still);
     assert.ok(Math.abs(Math.hypot(m.vx, m.vy) - ch.speed) < 1e-6);

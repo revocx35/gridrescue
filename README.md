@@ -26,7 +26,7 @@ Nobody needs an account to play. An admin signs in through [Authentik](https://g
 | Find the hostage | Every enemy you destroy briefly lights a wedge of the grid. The hostage is somewhere inside it |
 | Maps | Choose on the start screen. The Grid is open floor; the forest map is full of trees and exploded tanks that block movement and bullets |
 | Enemy 5 | The strongest and rarest enemy. Throws a large ball every 3 seconds that rolls through cover |
-| Su-34 | Very rare. Crosses the screen firing guided Kh-29 missiles, which chase you until they are shot down or run out of fuel |
+| Su-34 | Very rare. Crosses the screen firing guided Kh-29 missiles, which chase you until you click or tap them, or they run out of fuel. Bullets pass through them |
 | Difficulty | Every 25 kills raises the level. Enemies gain 10% health, damage and XP per level, but no speed or size |
 | Companion | Joins after enough kills, or as you get close to the hostage, whichever comes first |
 | Upgrades | Destroyed enemies drop XP. Every 200 XP the game freezes and you pick one: pump gun, 20% more damage, 20% faster firing, more health, one more companion, or bullets that pass through one more enemy |

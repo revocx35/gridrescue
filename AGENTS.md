@@ -101,7 +101,7 @@ docker compose up -d --build  # deploy
 - The `enabled` switch exists only on roles listed with it in `ROLE_FIELDS`. A map must keep a regular enemy on, because direction
   hints come from kills. With the boss off, `s.boss.alive` is false from the start and spawning keeps going.
 - Jet and missile images are drawn rotated to their heading, so uploads must face right. Missiles are in `s.missiles`, not
-  `s.enemies`: shooting one down is not a kill.
+  `s.enemies`, and only `destroyMissileAt` removes one early: bullets and auto-aim ignore them, and it is not a kill.
 - Enemy 5 cannot spawn in the first 40 seconds of a run (`ENEMY5_EARLIEST`). Spawn tests must set `s.time`.
 - Removing or renaming a config option needs a mapping in `Store.upgrade`. A stored value that no longer validates makes
   the whole file count as corrupt, so it gets moved aside and the game falls back to defaults.
