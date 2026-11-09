@@ -33,8 +33,8 @@ are deleted on every commit. A monotonically increasing `revision` gives optimis
 - `enabled` on a role removes it from that map: spawns, the roster, the companion upgrade, and for the boss the fight itself, so
   the hostage is free from the start.
 - The difficulty level is `1 + floor(kills / difficultyKills)`. Each level adds `difficultyIncrease` percent of the base health,
-  damage, size (capped at the largest size the admin may set) and XP. Spawns take the level they appear at; the boss is rescaled
-  when the level changes, keeping its share of health. Projectiles gain damage, and missiles also health. Speed never changes.
+  damage and XP. Spawns take the level they appear at; the boss is rescaled
+  when the level changes, keeping its share of health. Projectiles gain damage, and missiles also health. Speed and size never change.
 - The Su-34 replaces a regular spawn at `jetChance`, one at a time and not in the first minute. It flies a straight line past the
   player, launching a Kh-29 every `fireInterval` seconds while in view. Missiles home with a limited turn rate, ignore obstacles,
   expire after 8 seconds and are favoured by auto-aim. Shooting one down gives no kill and no XP.

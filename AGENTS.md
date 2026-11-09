@@ -97,7 +97,7 @@ docker compose up -d --build  # deploy
   `user-select: text`, a 16 px font for iOS, and the `closest('input')` guard in `Keyboard`.
 - "Restore defaults" does not touch the leaderboard; only its own admin tab does.
 - Enemy stats are per actor now (`e.size`, `e.damage`, `e.xp`), set at spawn from the current level. Draw and hit-test those,
-  not `characters[kind]`. Tests that build enemies by hand must set them. Speed never scales.
+  not `characters[kind]`. Tests that build enemies by hand must set them. Speed and size never scale.
 - The `enabled` switch exists only on roles listed with it in `ROLE_FIELDS`. A map must keep a regular enemy on, because direction
   hints come from kills. With the boss off, `s.boss.alive` is false from the start and spawning keeps going.
 - Jet and missile images are drawn rotated to their heading, so uploads must face right. Missiles are in `s.missiles`, not

@@ -1033,22 +1033,16 @@ describe('difficulty levels', () => {
     assert.ok(s.events.some((e) => e.type === 'difficulty' && e.level === 2));
   });
 
-  it('new enemies gain every stat except speed', () => {
+  it('new enemies gain health, damage and XP, but no speed or size', () => {
     const s = quiet((c) => { c.gameplay.jetChance = 0; c.gameplay.enemy5Chance = 0; });
     s.level = 3;
     const ch = s.cfg.characters.enemy1;
     const e = spawn(s, 'enemy1', 1);
     assert.equal(e.maxHp, ch.hp * 2);
     assert.equal(e.damage, ch.damage * 2);
-    assert.equal(e.size, ch.size * 2);
+    assert.equal(e.size, ch.size);
     assert.equal(e.xp, ch.xp * 2);
     assert.ok(e.speed <= ch.speed * 1.08);
-  });
-
-  it('stops growing a character at the largest allowed size', () => {
-    const s = quiet((c) => { c.gameplay.jetChance = 0; c.gameplay.enemy5Chance = 0; });
-    s.level = 100;
-    assert.equal(spawn(s, 'enemy1', 1).size, 220);
   });
 
   it('leaves the admin settings untouched', () => {
@@ -1066,7 +1060,7 @@ describe('difficulty levels', () => {
     killOne(s);
     assert.equal(s.boss.maxHp, s.cfg.characters.boss.hp * 1.5);
     assert.equal(s.boss.hp, s.boss.maxHp / 2);
-    assert.equal(s.boss.size, s.cfg.characters.boss.size * 1.5);
+    assert.equal(s.boss.size, s.cfg.characters.boss.size);
   });
 
   it('an increase of zero changes nothing', () => {

@@ -22,7 +22,6 @@ const MISSILE_TTL = 8;
 const MISSILE_TURN_RATE = 2.4; // radians per second: fast enough to chase, slow enough to sidestep
 const MISSILE_AIM_BIAS = 0.55; // auto-aim treats missiles as this much closer, since they must be shot down
 const JET_MAX_LIFE = 30;
-const MAX_ENEMY_SIZE = 220;
 const BALL_TELEGRAPH = 0.5;
 const BALL_TTL = 5;
 const NEAREST_HOSTAGE_FACTOR = 0.85;
@@ -181,7 +180,7 @@ function killEnemy(s, e) {
   updateDifficulty(s);
 }
 
-/** Every enemy stat but speed is multiplied by this; additive per level, like the damage upgrade. */
+/** Enemy health, damage and XP are multiplied by this; additive per level, like the damage upgrade. */
 function enemyFactor(s) {
   return 1 + ((s.level - 1) * s.cfg.gameplay.difficultyIncrease) / 100;
 }
@@ -197,8 +196,6 @@ function updateDifficulty(s) {
   const health = b.hp / b.maxHp;
   b.maxHp = ch.hp * factor;
   b.hp = b.maxHp * health;
-  b.size = Math.min(ch.size * factor, MAX_ENEMY_SIZE);
-  b.r = radius(b.size);
   emit(s, 'difficulty', { level });
 }
 
@@ -293,9 +290,8 @@ function chooseEnemyKind(s) {
 function addEnemy(s, kind, x, y) {
   const ch = s.cfg.characters[kind];
   const factor = enemyFactor(s);
-  const size = Math.min(ch.size * factor, MAX_ENEMY_SIZE);
-  const e = actor(x, y, { size, hp: ch.hp * factor });
-  Object.assign(e, { kind, size, speed: ch.speed, damage: (ch.damage ?? 0) * factor, xp: Math.round(ch.xp * factor) });
+  const e = actor(x, y, { size: ch.size, hp: ch.hp * factor });
+  Object.assign(e, { kind, size: ch.size, speed: ch.speed, damage: (ch.damage ?? 0) * factor, xp: Math.round(ch.xp * factor) });
   s.enemies.push(e);
   return e;
 }
