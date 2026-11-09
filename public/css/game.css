@@ -218,6 +218,63 @@ body {
 .map-choice[aria-pressed="true"] { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 20%, transparent); }
 .map-choice:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
 
+.score-form { display: grid; gap: 6px; margin-bottom: 14px; text-align: left; }
+.score-row { display: flex; gap: 8px; }
+.score-form input {
+  flex: 1;
+  min-width: 0;
+  min-height: 44px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text);
+  font: inherit;
+  font-size: 16px; /* anything smaller makes iOS zoom the page on focus */
+  -webkit-user-select: text; /* the page disables selection, which would make this field uneditable on iOS */
+  user-select: text;
+}
+.score-submit {
+  flex: none;
+  min-height: 44px;
+  padding: 8px 18px;
+  border: 1px solid var(--accent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
+  color: var(--text);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+.score-submit:disabled { opacity: 0.5; cursor: default; }
+.score-status { min-height: 1.3em; margin: 0; font-size: 13px; color: var(--muted); }
+
+.board { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-bottom: 14px; text-align: left; }
+.board h3 { margin: 0 0 6px; }
+.board-list { display: grid; gap: 3px; margin: 0; padding: 0 0 0 22px; font-size: 13px; }
+.board-list li { padding: 2px 4px; border-radius: 6px; }
+.board-list li > * { vertical-align: bottom; }
+.board-mine { background: color-mix(in srgb, var(--accent) 22%, transparent); }
+.board-name { display: inline-block; width: calc(100% - 52px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.board-list b { display: inline-block; width: 52px; text-align: right; font-variant-numeric: tabular-nums; }
+.board-empty, .board-message { margin: 0; font-size: 13px; color: var(--muted); }
+.board-message { grid-column: 1 / -1; }
+
+.text-btn {
+  display: block;
+  margin: 8px auto 0;
+  min-height: 40px;
+  padding: 6px 14px;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
 .upgrades { display: grid; gap: 8px; }
 
 .upgrade {
@@ -267,7 +324,7 @@ body[data-layout="mobile"] .upgrade-key { display: none; }
   cursor: pointer;
   overflow-wrap: anywhere;
 }
-.primary:focus-visible, .icon-btn:focus-visible, .admin-link:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
+.text-btn:focus-visible, .score-submit:focus-visible, .score-form input:focus-visible, .primary:focus-visible, .icon-btn:focus-visible, .admin-link:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
 
 .controls-hint { margin: 12px 0 0; }
 

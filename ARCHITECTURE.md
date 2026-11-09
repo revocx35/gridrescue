@@ -55,6 +55,13 @@ are deleted on every commit. A monotonically increasing `revision` gives optimis
   runs far enough to make it go home. Under half health its attacks speed up.
 - The game is won only by touching the hostage after the boss is dead, and lost at zero player health.
 
+## Leaderboard
+
+The server records when each run starts (`POST /api/runs`, a one-time token stored only as a hash, in memory, 3 hour
+life). After a win the browser posts the token, a name, the time and the kills. Only wins can be posted. The map comes from
+the token. Each map keeps its top 50 by shortest time and top 50 by most kills in `leaderboard.json`; the public view shows
+ten of each. A restart loses open run tokens, so a run in progress at that moment cannot be saved.
+
 ## Page layout
 
 `data-layout` on `<body>` is `mobile` for coarse pointers or narrow windows. Admin-chosen section order is applied
@@ -98,6 +105,9 @@ each side of the game because there is not enough height to stack them.
 | Login CSRF, code injection | One-time `state` bound to a browser cookie, PKCE, nonce; redirect URI comes from `PUBLIC_URL`, never the `Host` header |
 | Signed-in non-admin | `groups` must match `ADMIN_GROUPS`; an empty list means no admins |
 | Cross-site writes | CSRF token (constant-time compare) plus exact `Origin` check |
+| Forged leaderboard scores | Partly mitigated. The rules run in the browser, so a determined cheat can post a believable score. One-time run tokens, a minimum possible time, a maximum possible kill count, a check against real elapsed time and rate limits stop casual forgery; admins delete the rest |
+| Leaderboard spam and storage growth | Per-address rate limits, 1 KB request bodies, a cap on open run tokens and a fixed number of stored entries |
+| Abusive or disguised public names | 20 characters, control, zero-width and direction-override characters rejected, plain text only; admins can delete entries |
 | XSS through names or text | `textContent` and canvas only; strict CSP with no inline script or style; input limits reject control characters |
 | Malicious uploads | Admin-only, 2 MB cap, PNG parsed chunk by chunk with CRC checks, dimension limit, bounded inflate against bombs, rebuilt from a chunk allowlist so metadata and trailing payloads are dropped; stored by hash; served as `image/png` with `nosniff` and a sandbox CSP |
 | Path traversal | Sprite paths come only from a validated SHA-256 name |

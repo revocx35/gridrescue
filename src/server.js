@@ -1,6 +1,7 @@
 // Process entry point: reads the environment and starts the HTTP(S) listener.
 import fs from 'node:fs';
 import { createApp } from './app.js';
+import { Leaderboard, RunTokens } from './leaderboard.js';
 import { createOidc } from './oidc.js';
 import { Sessions } from './sessions.js';
 import { Store } from './store.js';
@@ -30,9 +31,12 @@ const https =
 
 const trustProxy = list(env.TRUST_PROXY);
 
-const store = new Store(env.DATA_DIR ?? './data');
+const dataDir = env.DATA_DIR ?? './data';
+const store = new Store(dataDir);
 const app = await createApp({
   store,
+  leaderboard: new Leaderboard(dataDir),
+  runs: new RunTokens(),
   sessions: new Sessions(),
   oidc,
   adminGroups,

@@ -1,10 +1,12 @@
 // Page bootstrap: applies the admin-set layout, wires input and runs the game loop.
 import { Joystick } from './joystick.js';
+import { fetchBoard, postScore, renderBoard, startRun } from './leaderboard.js';
 import { Renderer, drawSpriteInBox, loadSprites } from './render.js';
-import { MAPS, NAMED_ROLES, mapConfig } from './schema.js';
+import { MAPS, MAX_SCORE_NAME_LENGTH, NAMED_ROLES, mapConfig } from './schema.js';
 import { applyUpgrade, availableUpgrades, createGame, step } from './sim.js';
 
 const FIXED_STEP = 1 / 60;
+const NAME_KEY = 'gridrescue-name';
 const $ = (id) => document.getElementById(id);
 const SECTION_IDS = { title: 'section-title', game: 'section-game', joystick: 'section-joystick' };
 
@@ -69,7 +71,7 @@ class Keyboard {
     };
     addEventListener('keydown', (e) => {
       const dir = map[e.code];
-      if (!dir) return;
+      if (!dir || e.target.closest?.('input')) return; // typing a name must not be swallowed as movement
       this.down.add(dir);
       e.preventDefault();
     });
@@ -147,6 +149,9 @@ class Game {
 
     $('overlay-action').addEventListener('click', () => this.onOverlayAction());
     $('pause-btn').addEventListener('click', () => this.pause());
+    $('score-form').addEventListener('submit', (e) => this.onScoreSubmit(e));
+    $('score-name').maxLength = MAX_SCORE_NAME_LENGTH;
+    $('board-toggle').addEventListener('click', () => this.toggleBoard());
     addEventListener('keydown', (e) => this.onKey(e));
     document.addEventListener('visibilitychange', () => {
       if (document.hidden) this.pause();
@@ -200,7 +205,7 @@ class Game {
       if (this.mode === 'playing') this.pause();
       else if (this.mode === 'paused') this.resume();
     } else if ((e.code === 'Enter' || e.code === 'Space') && this.mode !== 'playing') {
-      if (e.target.closest?.('.map-choice')) return; // that key is choosing a map, not starting
+      if (e.target.closest?.('.map-choice, #score-form, #board-toggle')) return; // that key belongs to the control
       e.preventDefault();
       this.onOverlayAction();
     }
@@ -211,7 +216,7 @@ class Game {
     else this.start();
   }
 
-  overlay({ heading, text, action, roster = false, upgrades = false, picker = false }) {
+  overlay({ heading, text, action, roster = false, upgrades = false, picker = false, score = false, boardButton = false }) {
     $('overlay-heading').textContent = heading;
     $('overlay-text').textContent = text;
     $('overlay-action').textContent = action ?? '';
@@ -219,10 +224,15 @@ class Game {
     $('upgrades').hidden = !upgrades;
     $('roster').hidden = !roster;
     $('map-picker').hidden = !picker;
+    $('score-form').hidden = !score;
+    $('board').hidden = true;
+    $('board-toggle').hidden = !boardButton;
+    $('board-toggle').textContent = 'Leaderboard';
     if (picker) this.buildMapPicker();
     $('controls-hint').hidden = !roster;
     $('overlay').hidden = false;
-    const first = upgrades ? $('upgrades').firstElementChild : $('overlay-action');
+    // Not the name field: a movement key still held at the moment of victory would type into it.
+    const first = upgrades ? $('upgrades').firstElementChild : score ? $('score-submit') : $('overlay-action');
     first.focus({ preventScroll: true, focusVisible: false });
   }
 
@@ -274,11 +284,14 @@ class Game {
       action: site.startLabel,
       roster: true,
       picker: true,
+      boardButton: true,
     });
   }
 
   start() {
     this.pendingMap = null;
+    this.finishedRun = null;
+    this.runToken = startRun(this.mapId);
     this.renderer.camera = null;
     this.renderer.particles.length = 0;
     this.renderer.rings.length = 0;
@@ -317,12 +330,87 @@ class Game {
     const { site } = this.config;
     $('hud').hidden = true;
     $('toast').hidden = true;
+    this.finishedRun = won ? { token: this.runToken, time: this.state.time, kills: this.state.kills } : null;
+    if (won) this.prepareScoreForm();
     this.overlay({
       heading: won ? `${this.names.hostage} rescued` : 'Game over',
       text: `${won ? site.winText : site.loseText} Time ${formatTime(this.state.time)}, ${this.state.kills} destroyed.`,
       action: 'Play again',
-      picker: true,
+      picker: !won, // choosing a map replaces this screen, which would lose the unsaved score
+      score: won,
+      boardButton: true,
     });
+  }
+
+  prepareScoreForm() {
+    let remembered = '';
+    try {
+      remembered = localStorage.getItem(NAME_KEY) ?? '';
+    } catch { /* private browsing */ }
+    $('score-name').value = remembered;
+    $('score-status').textContent = '';
+    $('score-submit').disabled = false;
+  }
+
+  async onScoreSubmit(event) {
+    event.preventDefault();
+    const run = this.finishedRun;
+    if (!run || $('score-submit').disabled) return;
+    const name = $('score-name').value.trim();
+    if (!name) {
+      $('score-status').textContent = 'Enter a name first.';
+      $('score-name').focus();
+      return;
+    }
+    $('score-submit').disabled = true;
+    $('score-status').textContent = 'Saving…';
+    const token = await run.token;
+    const result = token
+      ? await postScore({ token, name, time: Math.round(run.time * 100) / 100, kills: run.kills })
+      : { ok: false, error: 'invalid_run' };
+    if (run !== this.finishedRun) return; // the player already started another game
+    if (!result.ok) {
+      $('score-status').textContent = {
+        invalid_name: 'That name cannot be used. Try another one.',
+        invalid_run: 'This run could not be saved.',
+        rate_limited: 'Too many scores in a short time. Wait a minute and try again.',
+      }[result.error] ?? 'Could not reach the server. Try again.';
+      $('score-submit').disabled = result.error === 'invalid_run';
+      return;
+    }
+    try {
+      localStorage.setItem(NAME_KEY, name);
+    } catch { /* private browsing */ }
+    this.finishedRun = null;
+    $('score-form').hidden = true;
+    this.buildMapPicker();
+    $('map-picker').hidden = false;
+    $('board-toggle').hidden = true;
+    await this.showBoard(result.entry.id);
+    $('overlay-action').focus({ preventScroll: true, focusVisible: false });
+  }
+
+  async showBoard(highlightId) {
+    const host = $('board');
+    const message = document.createElement('p');
+    message.className = 'board-message';
+    message.textContent = 'Loading…';
+    host.replaceChildren(message);
+    host.hidden = false;
+    const mapId = this.mapId;
+    try {
+      const data = await fetchBoard();
+      if (mapId === this.mapId) renderBoard(host, data.maps[mapId], highlightId);
+    } catch {
+      message.textContent = 'Could not load the leaderboard.';
+    }
+  }
+
+  toggleBoard() {
+    const opening = $('board').hidden;
+    $('board-toggle').textContent = opening ? 'Hide leaderboard' : 'Leaderboard';
+    if (opening) this.showBoard();
+    else $('board').hidden = true;
   }
 
   toast(message, seconds = 2.4) {

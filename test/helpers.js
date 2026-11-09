@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import zlib from 'node:zlib';
 import { createApp } from '../src/app.js';
+import { Leaderboard, RunTokens } from '../src/leaderboard.js';
 import { Sessions } from '../src/sessions.js';
 import { Store } from '../src/store.js';
 
@@ -49,19 +50,25 @@ export async function makeApp(options = {}) {
   const store = new Store(dir, { error() {} });
   let clock = 1_000_000;
   const sessions = new Sessions(() => clock);
+  const leaderboard = new Leaderboard(dir, { error() {} }, () => clock);
+  const runs = new RunTokens(() => clock);
   const app = await createApp({
     store,
+    leaderboard,
+    runs,
     sessions,
     oidc: fakeOidc(options.oidc),
     adminGroups: options.adminGroups ?? ['editors'],
     publicUrl: ORIGIN,
     logger: false,
-    rateLimits: { auth: 10_000, write: 10_000, ...options.rateLimits },
+    rateLimits: { auth: 10_000, write: 10_000, run: 10_000, score: 10_000, ...options.rateLimits },
   });
   await app.ready();
   return {
     app,
     store,
+    leaderboard,
+    runs,
     sessions,
     dir,
     advance: (ms) => { clock += ms; },

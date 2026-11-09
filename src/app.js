@@ -6,7 +6,8 @@ import cookie from '@fastify/cookie';
 import fastifyStatic from '@fastify/static';
 import rateLimit from '@fastify/rate-limit';
 import * as oidcClient from 'openid-client';
-import { MAPS, ROLES, validateConfig } from '../public/js/schema.js';
+import { MAPS, ROLES, cleanScoreName, mapConfig, validateConfig } from '../public/js/schema.js';
+import { scoreLimits } from '../public/js/sim.js';
 import { InvalidPng, MAX_SPRITE_BYTES, sanitizePng } from './png.js';
 import { PENDING_LOGIN_MS, SESSION_ABSOLUTE_MS, randomToken, safeEqual } from './sessions.js';
 
@@ -14,6 +15,7 @@ const PUBLIC_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), '..',
 const SESSION_COOKIE = '__Host-gr_session';
 const LOGIN_COOKIE = '__Host-gr_login';
 const JSON_LIMIT = 64 * 1024;
+const SCORE_BODY_LIMIT = 1024;
 
 const CSP = [
   "default-src 'none'",
@@ -29,13 +31,13 @@ const CSP = [
 const cookieOptions = { path: '/', secure: true, httpOnly: true, sameSite: 'lax' };
 
 /**
- * options: { store, sessions, oidc, adminGroups: string[], publicUrl, trustProxy, https, logger, rateLimits }
+ * options: { store, leaderboard, runs, sessions, oidc, adminGroups: string[], publicUrl, trustProxy, https, logger, rateLimits }
  * `oidc` may be null, in which case the admin area reports that sign-in is unavailable.
  */
 export async function createApp(options) {
-  const { store, sessions, oidc, adminGroups, publicUrl } = options;
+  const { store, leaderboard, runs, sessions, oidc, adminGroups, publicUrl } = options;
   const origin = new URL(publicUrl).origin;
-  const limits = { auth: 20, write: 120, ...options.rateLimits };
+  const limits = { auth: 20, write: 120, run: 60, score: 12, ...options.rateLimits };
 
   const app = Fastify({
     https: options.https ?? null,
@@ -108,6 +110,35 @@ export async function createApp(options) {
       .header('Content-Security-Policy', "default-src 'none'; sandbox")
       .type('image/png')
       .send(png);
+  });
+
+  // ---- leaderboard ----
+
+  const isObject = (value) => typeof value === 'object' && value !== null;
+  const publicWrite = (max) => ({ bodyLimit: SCORE_BODY_LIMIT, config: { rateLimit: { max, timeWindow: '1 minute' } } });
+
+  app.get('/api/leaderboard', async (request, reply) => {
+    reply.header('Cache-Control', 'no-cache');
+    return leaderboard.view();
+  });
+
+  app.post('/api/runs', publicWrite(limits.run), async (request, reply) => {
+    reply.header('Cache-Control', 'no-store');
+    const map = isObject(request.body) ? request.body.map : null;
+    if (!MAPS.includes(map)) return reply.code(400).send({ error: 'bad_request' });
+    return { token: runs.issue(map, scoreLimits(mapConfig(store.snapshot().config, map))) };
+  });
+
+  app.post('/api/leaderboard', publicWrite(limits.score), async (request, reply) => {
+    reply.header('Cache-Control', 'no-store');
+    if (!isObject(request.body)) return reply.code(400).send({ error: 'bad_request' });
+    const { token, time, kills } = request.body;
+    // Checked first, and without spending the token, so a player can fix a rejected name.
+    const name = cleanScoreName(request.body.name);
+    if (!name) return reply.code(422).send({ error: 'invalid_name' });
+    const run = runs.take(token);
+    if (!run || !runs.isPlausible(run, time, kills)) return reply.code(403).send({ error: 'invalid_run' });
+    return leaderboard.add(run.map, { name, time: Math.round(time * 100) / 100, kills });
   });
 
   app.get('/admin', async (request, reply) => reply.sendFile('admin.html'));
@@ -247,6 +278,20 @@ export async function createApp(options) {
     if (!knownSlot(request, reply)) return reply;
     store.clearSprite(request.params.map, request.params.role);
     return adminState(request.session);
+  });
+
+  app.get('/api/admin/leaderboard', { preHandler: requireAdmin }, async () => leaderboard.all());
+
+  app.delete('/api/admin/leaderboard/:map/:id', writeRoute(), async (request, reply) => {
+    const { map, id } = request.params;
+    if (!MAPS.includes(map) || !leaderboard.remove(map, id)) return reply.code(404).send({ error: 'not_found' });
+    return leaderboard.all();
+  });
+
+  app.delete('/api/admin/leaderboard/:map', writeRoute(), async (request, reply) => {
+    if (!MAPS.includes(request.params.map)) return reply.code(404).send({ error: 'not_found' });
+    leaderboard.clear(request.params.map);
+    return leaderboard.all();
   });
 
   return app;

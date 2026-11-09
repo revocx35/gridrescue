@@ -58,7 +58,17 @@
           <div class="map-picker" id="map-picker" role="group" aria-label="Map" hidden></div>
           <div class="roster" id="roster"></div>
           <div class="upgrades" id="upgrades" hidden></div>
+          <form class="score-form" id="score-form" hidden novalidate>
+            <label class="micro" for="score-name">Your name for the leaderboard</label>
+            <div class="score-row">
+              <input id="score-name" type="text" autocomplete="nickname" enterkeyhint="send">
+              <button type="submit" class="score-submit" id="score-submit">Add</button>
+            </div>
+            <p class="score-status" id="score-status" role="status" aria-live="polite"></p>
+          </form>
+          <div class="board" id="board" hidden></div>
           <button type="button" class="primary" id="overlay-action"></button>
+          <button type="button" class="text-btn" id="board-toggle" hidden>Leaderboard</button>
           <p class="micro controls-hint" id="controls-hint"></p>
         </div>
         <a class="admin-link micro" href="/admin">Admin</a>

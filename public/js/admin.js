@@ -1,5 +1,6 @@
 // Admin editor. All values are placed with textContent/value, never as HTML.
 import { ImageConversionError, imageToPng } from './image-convert.js';
+import { formatRunTime } from './leaderboard.js';
 import { defaultSprite } from './render.js';
 import {
   CHARACTER_FIELDS, GAMEPLAY_FIELDS, MAPS, MAX_MAP_NAME_LENGTH, MAX_NAME_LENGTH, NAMED_ROLES, ORDER_FIELDS, ORDER_LABELS, ROLES, ROLE_FIELDS, ROLE_LABELS,
@@ -351,6 +352,60 @@ function renderGameplay() {
   $('tab-gameplay').replaceChildren(el('div', { class: 'panel block gameplay-block' }, el('h2', { textContent: 'Rules' }), grid));
 }
 
+// ---- leaderboard ----
+
+function renderScores(data) {
+  $('tab-leaderboard').replaceChildren(...MAPS.map((mapId) => {
+    const entries = data.maps[mapId];
+    const clear = el('button', {
+      class: 'btn', type: 'button', textContent: 'Clear this map', disabled: !entries.length,
+      on: { click: () => clearScores(mapId) },
+    });
+    const rows = entries.map((entry) => el(
+      'li', { class: 'score-row' },
+      el('span', { class: 'score-name', textContent: entry.name }),
+      el('span', { class: 'score-stat', textContent: formatRunTime(entry.time) }),
+      el('span', { class: 'score-stat', textContent: `${entry.kills} kills` }),
+      el('button', { class: 'btn', type: 'button', textContent: 'Delete', on: { click: () => deleteScore(mapId, entry) } }),
+    ));
+    return el(
+      'div', { class: 'panel block score-block' },
+      el('div', { class: 'score-head' }, el('h2', { textContent: draft.maps[mapId].name || mapId }), clear),
+      rows.length ? el('ul', { class: 'score-table' }, ...rows) : el('p', { class: 'score-none', textContent: 'No scores yet.' }),
+    );
+  }));
+}
+
+async function changeScores(request, message) {
+  try {
+    renderScores(await request());
+    setStatus(message, 'good');
+  } catch (error) {
+    setStatus(explain(error), 'error');
+  }
+}
+
+async function loadScores() {
+  try {
+    renderScores(await fetch('/api/admin/leaderboard').then((response) => {
+      if (!response.ok) throw Object.assign(new Error('failed'), { status: response.status });
+      return response.json();
+    }));
+  } catch (error) {
+    setStatus(explain(error), 'error');
+  }
+}
+
+function deleteScore(mapId, entry) {
+  const url = `/api/admin/leaderboard/${mapId}/${entry.id}`;
+  return changeScores(() => api('DELETE', url), `Deleted the score by ${entry.name}.`);
+}
+
+function clearScores(mapId) {
+  if (!confirm(`Delete every score on ${draft.maps[mapId].name}? This cannot be undone.`)) return undefined;
+  return changeScores(() => api('DELETE', `/api/admin/leaderboard/${mapId}`), 'Leaderboard cleared.');
+}
+
 function renderAll() {
   renderCharacters();
   renderSite();
@@ -363,6 +418,7 @@ function selectTab(name) {
     tab.setAttribute('aria-selected', String(active));
     $(`tab-${tab.dataset.tab}`).hidden = !active;
   }
+  if (name === 'leaderboard') loadScores();
 }
 
 async function save() {

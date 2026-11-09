@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { MAPS, NAMED_ROLES, ROLES, ROLE_FIELDS, SPRITE_HASH, defaultConfig, validateConfig } from '../public/js/schema.js';
 
-function writeAtomic(file, data) {
+export function writeAtomic(file, data) {
   const tmp = `${file}.${crypto.randomBytes(6).toString('hex')}.tmp`;
   const fd = fs.openSync(tmp, 'w', 0o640);
   try {

@@ -12,6 +12,7 @@ Nobody needs an account to play. An admin signs in through [Authentik](https://g
   joystick size and which side the movement stick is on
 - each enemy's attack type: melee, sniper (one bullet) or pump (spread)
 - XP dropped by each enemy, XP needed per upgrade, the damage upgrade's percentage and the health upgrade's amount
+- the leaderboard: delete single scores or clear a map
 - gameplay numbers: health, speed, damage, spawn rates, how far away the hostage is and how wide the hint is
 
 ## How it plays
@@ -26,6 +27,7 @@ Nobody needs an account to play. An admin signs in through [Authentik](https://g
 | Companion | Joins after enough kills, or as you get close to the hostage, whichever comes first |
 | Upgrades | Destroyed enemies drop XP. Every 200 XP the game freezes and you pick one: pump gun, 20% more damage, more health, one more companion, or bullets that pass through one more enemy |
 | Win | Defeat the boss, then reach the hostage |
+| Leaderboard | After a win, enter a name to join the global tables for that map: fastest rescue and most kills |
 
 ## Run it
 

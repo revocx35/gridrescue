@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { defaultConfig, mapConfig } from '../public/js/schema.js';
 import { forEachItemIn, hitsSolid } from '../public/js/scenery.js';
-import { applyUpgrade, availableUpgrades, createGame, step } from '../public/js/sim.js';
+import { applyUpgrade, availableUpgrades, createGame, scoreLimits, step } from '../public/js/sim.js';
 
 const DT = 1 / 60;
 
@@ -915,6 +915,29 @@ describe('maps', () => {
     }
     assert.ok(wins >= 3, results.join(' '));
     console.log('forest bot results', results.join(' '));
+  });
+});
+
+describe('score limits', () => {
+  it('real wins always fall inside the limits the server enforces', () => {
+    let wins = 0;
+    for (const mapId of ['grid', 'forest']) {
+      for (let seed = 1; seed <= 16; seed++) {
+        const s = game(seed * 53, () => {}, mapId);
+        const picks = ['damage', 'companion', 'health', 'pierce'];
+        for (let frames = 0; (s.status === 'playing' || s.status === 'levelup') && frames < 60 * 300; frames++) {
+          if (s.status === 'levelup') applyUpgrade(s, picks[s.kills % picks.length]);
+          step(s, DT, bot(s));
+          s.events.length = 0;
+        }
+        if (s.status !== 'won') continue;
+        wins += 1;
+        const { minTime, minSpawnGap } = scoreLimits(s.cfg);
+        assert.ok(s.time >= minTime, `${s.time} < ${minTime}`);
+        assert.ok(s.kills <= s.time / minSpawnGap + 1, `${s.kills} kills in ${s.time}s`);
+      }
+    }
+    assert.ok(wins > 0);
   });
 });
 

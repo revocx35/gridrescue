@@ -163,6 +163,16 @@ input[type="color"] {
 .mock-joy { border: 1px solid var(--line); border-radius: 50%; display: grid; place-items: center; }
 .mock-knob { width: 42%; height: 42%; border-radius: 50%; }
 
+.score-block + .score-block { margin-top: 12px; }
+.score-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
+.score-head h2 { margin: 0; overflow-wrap: anywhere; }
+.score-table { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
+.score-row { display: flex; align-items: center; gap: 10px; padding: 4px 4px 4px 10px; border: 1px solid var(--line); border-radius: 10px; }
+.score-name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.score-stat { flex: none; color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
+.score-row .btn { min-height: 34px; padding: 3px 10px; font-size: 13px; }
+.score-none { margin: 0; color: var(--muted); }
+
 .savebar {
   position: fixed;
   left: 0;

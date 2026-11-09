@@ -14,6 +14,7 @@ public/index.html, js/main.js      Game page: applies layout, input, game loop, 
 public/js/sim.js                   Game rules. No DOM. Runs headless in tests
 public/js/scenery.js               Forest obstacles: seeded chunks, collision and lookup. No DOM
 public/js/render.js                Canvas drawing and the built-in default art for each map
+public/js/leaderboard.js           Leaderboard API calls and tables, used by the game and the admin tab
 public/js/joystick.js              Pointer Events joystick (one instance each for moving and aiming)
 public/js/schema.js                Editable config: defaults, limits, validation. Shared by server and admin UI
 public/admin.html, js/admin.js     Admin editor
@@ -23,6 +24,7 @@ src/app.js                         Fastify routes, security headers, auth checks
 src/oidc.js                        OpenID Connect client (authorization code + PKCE)
 src/sessions.js                    In-memory sessions and pending logins
 src/store.js                       config.json + content-addressed sprites in DATA_DIR
+src/leaderboard.js                 leaderboard.json storage and one-time run tokens
 src/png.js                         Strict PNG parser and sanitiser
 test/                              node:test suites
 scripts/setup.sh                   Creates .env and the self-signed certificate
@@ -61,6 +63,8 @@ docker compose up -d --build  # deploy
 
 ## Never do
 
+- Never take a score's map from the request, or accept one without `runs.take`: the map and limits belong to the run token.
+- Never show a leaderboard name except through `textContent`. Anyone can submit one.
 - Never commit `.env`, `certs/`, `data/`, or real domains, LAN addresses or client secrets. Docs use placeholders.
 - Never loosen the CSP, cookie flags, CSRF or origin checks to make something work.
 - Never treat a signed-in user as admin without the `ADMIN_GROUPS` check; empty must keep meaning "nobody".
@@ -87,6 +91,11 @@ docker compose up -d --build  # deploy
 - Flat configs from before maps become the first map in `Store.upgrade`. The 10/40 XP swap runs only on that flat form, so an
   admin who later picks those values keeps them.
 - `upgradeDamage` is a percentage of base damage and stacks additively (`s.gun.damagePercent`).
+- `scoreLimits` in `sim.js` must stay true of real play. If spawn pacing, hostage distance or movement changes, update it and
+  keep the "score limits" test passing, or real wins get rejected.
+- The page sets `user-select: none`, and global key handlers treat WASD as movement. Any new text input needs
+  `user-select: text`, a 16 px font for iOS, and the `closest('input')` guard in `Keyboard`.
+- "Restore defaults" does not touch the leaderboard; only its own admin tab does.
 - Enemy 5 cannot spawn in the first 40 seconds of a run (`ENEMY5_EARLIEST`). Spawn tests must set `s.time`.
 - Removing or renaming a config option needs a mapping in `Store.upgrade`. A stored value that no longer validates makes
   the whole file count as corrupt, so it gets moved aside and the game falls back to defaults.

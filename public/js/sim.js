@@ -19,6 +19,9 @@ const MAX_COMPANIONS = 6;
 const ENEMY5_EARLIEST = 40; // seconds into a run, so nobody meets the strongest enemy with a starting gun
 const BALL_TELEGRAPH = 0.5;
 const BALL_TTL = 5;
+const NEAREST_HOSTAGE_FACTOR = 0.85;
+const FASTEST_SPAWN_FACTOR = 0.42;
+const RESCUE_GAP = 24;
 const KILL_HEAL = { enemy1: 12, enemy2: 3, enemy5: 30 };
 const PLAYER_PUMP = { pellets: 5, spread: 0.15, ttl: 0.46, damageFactor: 0.55, intervalFactor: 1.7 };
 export const CELL_SIZE = 80;
@@ -35,11 +38,24 @@ function actor(x, y, ch) {
   };
 }
 
+/**
+ * The most a real run on this map can do, for checking scores the browser reports. The time is
+ * loosened by a tenth because sliding around obstacles can add a little ground speed.
+ */
+export function scoreLimits(cfg) {
+  const { player, hostage } = cfg.characters;
+  const walk = cfg.gameplay.hostageDistance * NEAREST_HOSTAGE_FACTOR - radius(player.size) - radius(hostage.size) - RESCUE_GAP;
+  return {
+    minTime: Math.max(0, walk / player.speed) * 0.9,
+    minSpawnGap: cfg.gameplay.spawnInterval * FASTEST_SPAWN_FACTOR,
+  };
+}
+
 /** view is the half-size of the visible world, kept current by the renderer. */
 export function createGame(cfg, { rng = Math.random, view = { halfW: 500, halfH: 350 } } = {}) {
   const c = cfg.characters;
   const angle = rng() * TAU;
-  const distance = cfg.gameplay.hostageDistance * (0.85 + rng() * 0.3);
+  const distance = cfg.gameplay.hostageDistance * (NEAREST_HOSTAGE_FACTOR + rng() * 0.3);
   const hostage = { x: Math.cos(angle) * distance, y: Math.sin(angle) * distance, r: radius(c.hostage.size) };
   const arena = cfg.gameplay.arenaRadius;
   const boss = {
@@ -227,7 +243,7 @@ function updateSpawning(s, dt) {
   s.spawnT -= dt;
   if (s.spawnT > 0) return;
   const base = s.cfg.gameplay.spawnInterval;
-  const interval = Math.max(base * 0.42, base * (1 - s.time / 260));
+  const interval = Math.max(base * FASTEST_SPAWN_FACTOR, base * (1 - s.time / 260));
   s.spawnT = interval * (s.boss.mode === 'fight' ? 2.2 : 1);
   if (s.enemies.length < s.cfg.gameplay.maxEnemies) spawnEnemy(s);
 }
@@ -609,7 +625,7 @@ export function applyUpgrade(s, id) {
 }
 
 function updateRescue(s) {
-  if (dist(s.player, s.hostage) >= s.player.r + s.hostage.r + 24) {
+  if (dist(s.player, s.hostage) >= s.player.r + s.hostage.r + RESCUE_GAP) {
     s.lockedNoticeShown = false;
     return;
   }

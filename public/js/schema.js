@@ -180,6 +180,19 @@ const CONTROL_CHARS = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/;
 const COLOR = /^#[0-9a-f]{6}$/i;
 export const SPRITE_HASH = /^[0-9a-f]{64}$/;
 
+// Zero-width and direction-override characters would let a public name disguise itself or flip a row.
+const INVISIBLE_CHARS = /[\u00ad\u200b-\u200f\u202a-\u202e\u2060-\u2069\ufeff]/;
+
+export const MAX_SCORE_NAME_LENGTH = 20;
+
+/** The name to show on the leaderboard, or null if it cannot be used. */
+export function cleanScoreName(value) {
+  if (typeof value !== 'string') return null;
+  const name = value.normalize('NFC').trim();
+  const usable = name && name.length <= MAX_SCORE_NAME_LENGTH && !CONTROL_CHARS.test(name) && !INVISIBLE_CHARS.test(name);
+  return usable ? name : null;
+}
+
 const isObject = (v) => typeof v === 'object' && v !== null && !Array.isArray(v);
 
 function checkKeys(obj, allowed, path, errors) {
