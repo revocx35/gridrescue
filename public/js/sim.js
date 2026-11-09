@@ -1,5 +1,5 @@
 // Game rules, with no DOM access: the browser renders this state and tests run it headlessly.
-import { createForest, hitsSolid, pushOutOfSolids } from './scenery.js';
+import { BUS_CHANCE, CHUNK_SIZE, createForest, createWasteland, forEachItemIn, hitsSolid, pushOutOfSolids } from './scenery.js';
 
 const TAU = Math.PI * 2;
 const DEG = Math.PI / 180;
@@ -26,7 +26,13 @@ const BALL_TTL = 5;
 const NEAREST_HOSTAGE_FACTOR = 0.85;
 const FASTEST_SPAWN_FACTOR = 0.42;
 const RESCUE_GAP = 24;
-const KILL_HEAL = { enemy1: 12, enemy2: 3, enemy5: 30, jet: 20 };
+const KILL_HEAL = { enemy1: 12, enemy2: 3, enemy5: 30, jet: 20, boss: 40, rocketeer: 10 };
+const ENDLESS_BOSS_EARLIEST = 60;
+const WASTELAND_START_CLEARING = 760; // no Rocketeer gets a shot in before the player has moved
+const BUS_SCAN_MARGIN = 240;
+const ROCKET_PRIORITY = 0.6; // auto-aim counts a rocket as this much closer, so it is shot down in a crowd
+// The widest strip of world any screen can show, used to bound how many buses a run can pass.
+const WIDEST_VIEW = 3400;
 const PLAYER_PUMP = { pellets: 5, spread: 0.15, ttl: 0.46, damageFactor: 0.55, intervalFactor: 1.7 };
 export const CELL_SIZE = 80;
 
@@ -51,28 +57,43 @@ export function scoreLimits(cfg) {
   const walk = cfg.gameplay.hostageDistance * NEAREST_HOSTAGE_FACTOR - radius(player.size) - radius(hostage.size) - RESCUE_GAP;
   return {
     minTime: Math.max(0, walk / player.speed) * 0.9,
-    minSpawnGap: cfg.gameplay.spawnInterval * FASTEST_SPAWN_FACTOR,
+    minSpawnGap: 1 / (1 / (cfg.gameplay.spawnInterval * FASTEST_SPAWN_FACTOR) + busKillRate(cfg)),
   };
 }
 
-/** view is the half-size of the visible world, kept current by the renderer. */
-export function createGame(cfg, { rng = Math.random, view = { halfW: 500, halfH: 350 } } = {}) {
+/** Rocketeers come on top of the spawn pacing: this bounds how many buses a player can run past per second. */
+function busKillRate(cfg) {
+  if (cfg.mapId !== 'wasteland' || !cfg.characters.rocketeer.enabled) return 0;
+  return (cfg.characters.player.speed * WIDEST_VIEW * BUS_CHANCE) / CHUNK_SIZE ** 2;
+}
+
+/** The arena and the start stay open so a fight is never decided by where an obstacle landed. */
+function createWorld(cfg, rng, hostage, arena) {
+  if (cfg.mapId !== 'forest' && cfg.mapId !== 'wasteland') return null;
+  const forest = cfg.mapId === 'forest';
+  const clearings = [{ x: 0, y: 0, r: forest ? 260 : WASTELAND_START_CLEARING }];
+  if (hostage) clearings.push({ x: hostage.x, y: hostage.y, r: arena + 60 });
+  return (forest ? createForest : createWasteland)(Math.floor(rng() * 2 ** 31), clearings);
+}
+
+/** view is the half-size of the visible world, kept current by the renderer. mode is 'rescue' or 'endless'. */
+export function createGame(cfg, { rng = Math.random, view = { halfW: 500, halfH: 350 }, mode = 'rescue' } = {}) {
   const c = cfg.characters;
+  const endless = mode === 'endless';
   const angle = rng() * TAU;
   const distance = cfg.gameplay.hostageDistance * (NEAREST_HOSTAGE_FACTOR + rng() * 0.3);
-  const hostage = { x: Math.cos(angle) * distance, y: Math.sin(angle) * distance, r: radius(c.hostage.size) };
+  const hostage = endless ? null : { x: Math.cos(angle) * distance, y: Math.sin(angle) * distance, r: radius(c.hostage.size) };
   const arena = cfg.gameplay.arenaRadius;
+  // In Endless the guardian never exists as such: a boss is only ever a regular entry in s.enemies.
   const boss = {
-    ...actor(hostage.x, hostage.y - arena * 0.4, c.boss),
-    kind: 'boss', size: c.boss.size, mode: 'idle', alive: c.boss.enabled,
+    ...actor(hostage?.x ?? 0, (hostage?.y ?? 0) - arena * 0.4, c.boss),
+    kind: 'boss', size: c.boss.size, mode: 'idle', alive: !endless && c.boss.enabled,
     fanT: 1.2, ringT: 3.4, chargeT: 5, windup: 0, dash: 0, dashX: 0, dashY: 0,
   };
-  // The arena and the start stay open so a fight is never decided by where a tree landed.
-  const world = cfg.mapId === 'forest'
-    ? createForest(Math.floor(rng() * 2 ** 31), [{ x: 0, y: 0, r: 260 }, { x: hostage.x, y: hostage.y, r: arena + 60 }])
-    : null;
+  const world = createWorld(cfg, rng, hostage, arena);
   return {
-    cfg, rng, view, world,
+    cfg, rng, view, world, mode,
+    crewedBuses: new Set(),
     status: 'playing',
     time: 0, kills: 0, level: 1, spawnT: 1.4, grace: 0,
     player: actor(0, 0, c.player),
@@ -97,6 +118,11 @@ function nearestEnemy(s, from, range) {
   for (const e of s.enemies) {
     const d = dist(from, e);
     if (d < bestD) { best = e; bestD = d; }
+  }
+  for (const m of s.missiles) {
+    if (m.kind !== 'rocket') continue;
+    const d = dist(from, m) * ROCKET_PRIORITY;
+    if (d < bestD) { best = m; bestD = d; }
   }
   if (s.boss.alive) {
     const d = dist(from, s.boss) - s.boss.r * 0.6;
@@ -146,6 +172,7 @@ function pushShots(s, shooter, weapon, angle) {
       pierce: weapon.pierce ?? 0,
     });
   }
+  emit(s, 'shot', { role: shooter === s.player ? 'player' : 'companion', x: shooter.x, y: shooter.y });
 }
 
 /** Aim stick held: fire that way even with no enemy in range. */
@@ -171,7 +198,7 @@ function killEnemy(s, e) {
   s.player.hp = Math.min(s.player.maxHp, s.player.hp + KILL_HEAL[e.kind]);
   emit(s, 'kill', { x: e.x, y: e.y, kind: e.kind });
   if (e.xp > 0) s.orbs.push({ x: e.x, y: e.y, xp: e.xp });
-  lightHint(s);
+  if (s.hostage) lightHint(s);
   updateDifficulty(s);
 }
 
@@ -197,9 +224,9 @@ function updateDifficulty(s) {
 function hurtEnemy(s, e, damage) {
   e.hp -= damage;
   e.flash = 0.09;
-  if (e.kind === 'boss' && e.mode !== 'fight') wakeBoss(s);
+  if (e === s.boss && e.mode !== 'fight') wakeBoss(s);
   if (e.hp > 0) return false;
-  if (e.kind === 'boss') {
+  if (e === s.boss) {
     e.alive = false;
     s.bullets.length = 0;
     s.enemies.length = 0;
@@ -247,12 +274,12 @@ function spawnEnemy(s) {
   const ring = Math.hypot(view.halfW, view.halfH) + 90;
   const x = player.x + Math.cos(angle) * ring;
   const y = player.y + Math.sin(angle) * ring;
-  if (Math.hypot(x - hostage.x, y - hostage.y) < g.arenaRadius + 60) return;
+  if (hostage && Math.hypot(x - hostage.x, y - hostage.y) < g.arenaRadius + 60) return;
   if (shouldSpawnJet(s)) {
     spawnJet(s, x, y);
     return;
   }
-  const kind = chooseEnemyKind(s);
+  const kind = shouldSpawnEndlessBoss(s) ? 'boss' : chooseEnemyKind(s);
   if (!kind) return;
   const e = addEnemy(s, kind, x, y);
   const ch = cfg.characters[kind];
@@ -262,6 +289,13 @@ function spawnEnemy(s) {
     e.ballT = ch.fireInterval;
     emit(s, 'enemy5');
   }
+  if (kind === 'boss') emit(s, 'bossSpawn');
+}
+
+function shouldSpawnEndlessBoss(s) {
+  if (s.mode !== 'endless' || !s.cfg.characters.boss.enabled || s.time < ENDLESS_BOSS_EARLIEST) return false;
+  if (s.enemies.some((e) => e.kind === 'boss')) return false;
+  return s.rng() < s.cfg.gameplay.bossChance;
 }
 
 function shouldSpawnJet(s) {
@@ -286,7 +320,7 @@ function addEnemy(s, kind, x, y) {
   const ch = s.cfg.characters[kind];
   const factor = enemyFactor(s);
   const e = actor(x, y, { size: ch.size, hp: ch.hp * factor });
-  Object.assign(e, { kind, size: ch.size, speed: ch.speed, damage: (ch.damage ?? 0) * factor, xp: Math.round(ch.xp * factor) });
+  Object.assign(e, { kind, size: ch.size, speed: ch.speed, damage: (ch.damage ?? 0) * factor, xp: Math.round((ch.xp ?? ch.endlessXp) * factor) });
   s.enemies.push(e);
   return e;
 }
@@ -312,6 +346,45 @@ function launchMissile(s, jet) {
     heading: jet.heading,
     r: radius(ch.size), damage: ch.damage * enemyFactor(s), ttl: MISSILE_TTL,
   });
+  emit(s, 'shot', { role: 'jet', x: jet.x, y: jet.y });
+}
+
+/** Puts a Rocketeer on every bus coming into view. A killed crew stays in crewedBuses, so it never returns. */
+function updateBusCrews(s) {
+  if (s.world?.kind !== 'wasteland' || !s.cfg.characters.rocketeer.enabled) return;
+  const { player: p, view } = s;
+  const w = view.halfW + BUS_SCAN_MARGIN;
+  const h = view.halfH + BUS_SCAN_MARGIN;
+  forEachItemIn(s.world, p.x - w, p.y - h, p.x + w, p.y + h, (item) => {
+    if (item.kind !== 'bus' || s.crewedBuses.has(item.id)) return;
+    s.crewedBuses.add(item.id);
+    const e = addEnemy(s, 'rocketeer', item.x, item.y);
+    e.busId = item.id;
+    e.cool = 0.6 + item.variant * s.cfg.characters.rocketeer.fireInterval; // so buses do not all fire together
+    if (!s.rocketeerSeen) emit(s, 'rocketeer');
+    s.rocketeerSeen = true;
+  });
+}
+
+function launchRocket(s, e) {
+  const ch = s.cfg.characters.rocket;
+  const heading = Math.atan2(s.player.y - e.y, s.player.x - e.x);
+  s.missiles.push({
+    kind: 'rocket',
+    x: e.x, y: e.y,
+    vx: Math.cos(heading) * ch.speed, vy: Math.sin(heading) * ch.speed,
+    heading,
+    r: radius(ch.size), damage: ch.damage * enemyFactor(s), ttl: MISSILE_TTL,
+  });
+  emit(s, 'shot', { role: 'rocketeer', x: e.x, y: e.y });
+}
+
+function updateRocketeer(s, e, dt) {
+  e.flash = Math.max(0, e.flash - dt);
+  e.cool -= dt;
+  if (e.cool > 0 || !onScreen(s, e)) return;
+  e.cool = s.cfg.characters.rocketeer.fireInterval;
+  launchRocket(s, e);
 }
 
 function updateJet(s, e, dt) {
@@ -346,9 +419,9 @@ export function destroyMissileAt(s, x, y, reach) {
 }
 
 function updateMissiles(s, dt) {
-  const { speed } = s.cfg.characters.missile;
   for (let i = s.missiles.length - 1; i >= 0; i--) {
     const m = s.missiles[i];
+    const { speed } = s.cfg.characters[m.kind === 'rocket' ? 'rocket' : 'missile'];
     m.ttl -= dt;
     const wanted = Math.atan2(s.player.y - m.y, s.player.x - m.x);
     const turn = Math.atan2(Math.sin(wanted - m.heading), Math.cos(wanted - m.heading));
@@ -367,13 +440,14 @@ function updateMissiles(s, dt) {
 }
 
 function updateSpawning(s, dt) {
-  if (s.cfg.characters.boss.enabled && !s.boss.alive) return;
+  if (s.hostage && s.cfg.characters.boss.enabled && !s.boss.alive) return;
   s.spawnT -= dt;
   if (s.spawnT > 0) return;
   const base = s.cfg.gameplay.spawnInterval;
   const interval = Math.max(base * FASTEST_SPAWN_FACTOR, base * (1 - s.time / 260));
   s.spawnT = interval * (s.boss.mode === 'fight' ? 2.2 : 1);
-  if (s.enemies.length < s.cfg.gameplay.maxEnemies) spawnEnemy(s);
+  const roaming = s.enemies.filter((e) => e.kind !== 'rocketeer').length; // bus crews must not crowd out spawns
+  if (roaming < s.cfg.gameplay.maxEnemies) spawnEnemy(s);
 }
 
 function addCompanion(s) {
@@ -385,7 +459,8 @@ function addCompanion(s) {
 function maybeSpawnCompanion(s) {
   if (s.naturalCompanion || !s.cfg.characters.companion.enabled) return;
   const g = s.cfg.gameplay;
-  if (s.kills < g.companionKills && dist(s.player, s.hostage) > g.companionDistance) return;
+  const nearHostage = s.hostage && dist(s.player, s.hostage) <= g.companionDistance;
+  if (s.kills < g.companionKills && !nearHostage) return;
   s.naturalCompanion = true;
   addCompanion(s);
 }
@@ -447,6 +522,7 @@ function updateRangedAttack(s, e, target, spec, d, dt) {
   if (e.windup > 0) {
     e.windup -= dt;
     if (e.windup > 0) return;
+    emit(s, 'shot', { role: e.kind, x: e.x, y: e.y });
     for (let i = 0; i < spec.pellets; i++) {
       const angle = e.aim + (i - (spec.pellets - 1) / 2) * spec.spread;
       s.bullets.push({
@@ -479,6 +555,7 @@ function updateBallAttack(s, e, target, dt) {
   e.windup = Math.max(e.ballT, 0.001);
   if (e.ballT > 0) return;
   const ball = s.cfg.characters.ball;
+  emit(s, 'shot', { role: e.kind, x: e.x, y: e.y });
   s.bullets.push({
     x: e.x, y: e.y,
     vx: Math.cos(e.aim) * ball.speed, vy: Math.sin(e.aim) * ball.speed,
@@ -493,6 +570,11 @@ function updateEnemies(s, dt) {
     const e = s.enemies[i];
     if (dist(e, s.player) > DESPAWN_DISTANCE) {
       s.enemies.splice(i, 1);
+      s.crewedBuses.delete(e.busId); // walked away from, not killed: it is back on its bus next time
+      continue;
+    }
+    if (e.kind === 'rocketeer') {
+      updateRocketeer(s, e, dt);
       continue;
     }
     if (e.kind === 'jet') {
@@ -507,7 +589,7 @@ function updateEnemies(s, dt) {
     let vx = ((target.x - e.x) / d) * e.speed * pace;
     let vy = ((target.y - e.y) / d) * e.speed * pace;
     for (const other of s.enemies) {
-      if (other === e || other.kind === 'jet') continue; // it is in the air
+      if (other === e || other.kind === 'jet' || other.kind === 'rocketeer') continue; // in the air, or up on a bus
       const ox = e.x - other.x;
       const oy = e.y - other.y;
       const od = Math.hypot(ox, oy);
@@ -529,13 +611,25 @@ function updateEnemies(s, dt) {
       updateRangedAttack(s, e, target, spec, d, dt);
       continue;
     }
+    const touching = d < e.r + target.r;
+    if (e.attack === 'kamikaze' && touching) {
+      hitTarget(s, target, e.damage);
+      emit(s, 'kamikaze', { role: e.kind, x: e.x, y: e.y });
+      s.enemies.splice(i, 1); // spent, not killed: no kill, no XP
+      continue;
+    }
     e.cool -= dt;
-    if (e.cool <= 0 && d < e.r + target.r) {
+    if (e.cool <= 0 && touching) {
       e.cool = 0.75;
-      if (target === s.player) hurtPlayer(s, e.damage);
-      else hurtCompanion(s, target, e.damage);
+      emit(s, 'shot', { role: e.kind, x: e.x, y: e.y });
+      hitTarget(s, target, e.damage);
     }
   }
+}
+
+function hitTarget(s, target, damage) {
+  if (target === s.player) hurtPlayer(s, damage);
+  else hurtCompanion(s, target, damage);
 }
 
 function fireBossBullet(s, angle, speed = BOSS_BULLET_SPEED) {
@@ -674,9 +768,19 @@ function updateShots(s, dt) {
       const e = s.enemies[j];
       if (!p.struck?.has(e) && dist(p, e) < e.r + 6 && strike(e)) s.enemies.splice(j, 1);
     }
+    if (!spent && interceptRocket(s, p)) spent = true;
     if (!spent && s.boss.alive && !p.struck?.has(s.boss) && dist(p, s.boss) < s.boss.r + 6) strike(s.boss);
     if (spent || p.ttl <= 0) s.shots.splice(i, 1);
   }
+}
+
+/** Rockets can be shot down. Kh-29 missiles cannot: only a click or tap destroys those. */
+function interceptRocket(s, shot) {
+  const index = s.missiles.findIndex((m) => m.kind === 'rocket' && dist(shot, m) < m.r + 6);
+  if (index < 0) return false;
+  const [rocket] = s.missiles.splice(index, 1);
+  emit(s, 'missileDown', { x: rocket.x, y: rocket.y });
+  return true;
 }
 
 function updateBullets(s, dt) {
@@ -759,6 +863,7 @@ export function applyUpgrade(s, id) {
 }
 
 function updateRescue(s) {
+  if (!s.hostage) return;
   if (dist(s.player, s.hostage) >= s.player.r + s.hostage.r + RESCUE_GAP) {
     s.lockedNoticeShown = false;
     return;
@@ -801,6 +906,7 @@ export function step(s, dt, input) {
 
   maybeSpawnCompanion(s);
   updateSpawning(s, dt);
+  updateBusCrews(s);
   const weapon = playerWeapon(s);
   if (p.aim) fireAimed(s, p, weapon, p.aim, dt);
   else fireAt(s, p, weapon, dt);

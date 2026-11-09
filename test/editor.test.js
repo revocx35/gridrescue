@@ -9,7 +9,7 @@ import { authed, chunk, makeApp, makePng, signIn } from './helpers.js';
 
 function editable() {
   const config = defaultConfig();
-  for (const map of Object.values(config.maps)) for (const ch of Object.values(map.characters)) delete ch.sprite;
+  for (const map of Object.values(config.maps)) for (const ch of Object.values(map.characters)) { delete ch.sprite; delete ch.sounds; }
   return config;
 }
 

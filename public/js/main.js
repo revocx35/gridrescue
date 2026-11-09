@@ -2,7 +2,8 @@
 import { Joystick } from './joystick.js';
 import { fetchBoard, postScore, renderBoard, startRun } from './leaderboard.js';
 import { Renderer, drawSpriteInBox, loadSprites } from './render.js';
-import { MAPS, MAX_SCORE_NAME_LENGTH, NAMED_ROLES, mapConfig } from './schema.js';
+import { GAME_MODES, MAPS, MAX_SCORE_NAME_LENGTH, NAMED_ROLES, mapConfig } from './schema.js';
+import { SoundBoard } from './sound.js';
 import { applyUpgrade, availableUpgrades, createGame, destroyMissileAt, step } from './sim.js';
 
 const FIXED_STEP = 1 / 60;
@@ -10,6 +11,7 @@ const NAME_KEY = 'gridrescue-name';
 // How far from a missile a press still counts, in CSS pixels. Fingers are less exact than a cursor.
 const MISSILE_REACH = { touch: 44, mouse: 28 };
 const $ = (id) => document.getElementById(id);
+const MODE_LABELS = { rescue: 'Rescue', endless: 'Endless' };
 const SECTION_IDS = { title: 'section-title', game: 'section-game', joystick: 'section-joystick' };
 
 const layoutQuery = matchMedia('(pointer: coarse), (max-width: 760px)');
@@ -44,11 +46,12 @@ function formatTime(seconds) {
   return `${Math.floor(whole / 60)}:${String(whole % 60).padStart(2, '0')}`;
 }
 
-function buildRoster(config, sprites) {
+function buildRoster(config, sprites, gameMode) {
   const roster = $('roster');
   roster.replaceChildren();
   for (const role of NAMED_ROLES) {
-    if (config.characters[role].enabled === false) continue;
+    const ch = config.characters[role]; // not every role exists on every map
+    if (!ch || ch.enabled === false || (role === 'hostage' && gameMode === 'endless')) continue;
     const item = document.createElement('div');
     item.className = 'roster-item';
     const canvas = document.createElement('canvas');
@@ -134,6 +137,8 @@ class Game {
   constructor(fullConfig, mapId, sprites, loadMapSprites) {
     this.fullConfig = fullConfig;
     this.loadMapSprites = loadMapSprites;
+    this.gameMode = GAME_MODES[0];
+    this.sounds = new SoundBoard();
     this.useMap(mapId, sprites, true);
     this.renderer = new Renderer($('game'), this.config, sprites);
     this.keyboard = new Keyboard();
@@ -143,7 +148,7 @@ class Game {
     this.mode = 'menu';
     this.accumulator = 0;
     this.lastFrame = performance.now();
-    this.state = createGame(this.config, { view: this.renderer.view });
+    this.state = this.newGame();
     this.toastTimer = 0;
     this.hudCache = {};
 
@@ -164,6 +169,10 @@ class Game {
     requestAnimationFrame((t) => this.frame(t));
   }
 
+  newGame() {
+    return createGame(this.config, { view: this.renderer.view, mode: this.gameMode });
+  }
+
   onCanvasPress(event) {
     if (this.mode !== 'playing' || event.button !== 0) return;
     const box = $('game').getBoundingClientRect();
@@ -178,24 +187,36 @@ class Game {
     this.mapId = mapId;
     this.sprites = sprites;
     this.config = mapConfig(this.fullConfig, mapId);
-    this.names = Object.fromEntries(NAMED_ROLES.map((role) => [role, this.config.characters[role].name]));
-    buildRoster(this.config, sprites);
+    this.names = Object.fromEntries(NAMED_ROLES.filter((role) => this.config.characters[role]).map((role) => [role, this.config.characters[role].name]));
+    buildRoster(this.config, sprites, this.gameMode);
+    this.sounds.setMap(this.config.characters);
     if (firstTime) return;
     this.renderer.setMap(this.config, sprites);
     this.renderer.camera = null;
-    this.state = createGame(this.config, { view: this.renderer.view });
+    this.state = this.newGame();
   }
 
-  buildMapPicker() {
-    $('map-picker').replaceChildren(...MAPS.map((id) => {
+  buildPickers() {
+    const choice = (label, pressed, onClick) => {
       const button = document.createElement('button');
       button.type = 'button';
       button.className = 'map-choice';
-      button.textContent = this.fullConfig.maps[id].name;
-      button.setAttribute('aria-pressed', String(id === this.mapId));
-      button.addEventListener('click', () => this.selectMap(id));
+      button.textContent = label;
+      button.setAttribute('aria-pressed', String(pressed));
+      button.addEventListener('click', onClick);
       return button;
-    }));
+    };
+    $('map-picker').replaceChildren(...MAPS.map((id) => choice(this.fullConfig.maps[id].name, id === this.mapId, () => this.selectMap(id))));
+    $('mode-picker').replaceChildren(...GAME_MODES.map((id) => choice(MODE_LABELS[id], id === this.gameMode, () => this.selectMode(id))));
+  }
+
+  selectMode(id) {
+    if (id === this.gameMode || (this.mode !== 'menu' && this.mode !== 'ended')) return;
+    this.gameMode = id;
+    buildRoster(this.config, this.sprites, id);
+    this.state = this.newGame();
+    this.mode = 'menu';
+    this.showMenu();
   }
 
   async selectMap(id) {
@@ -238,11 +259,12 @@ class Game {
     $('upgrades').hidden = !upgrades;
     $('roster').hidden = !roster;
     $('map-picker').hidden = !picker;
+    $('mode-picker').hidden = !picker;
     $('score-form').hidden = !score;
     $('board').hidden = true;
     $('board-toggle').hidden = !boardButton;
     $('board-toggle').textContent = 'Leaderboard';
-    if (picker) this.buildMapPicker();
+    if (picker) this.buildPickers();
     $('controls-hint').hidden = !roster;
     $('overlay').hidden = false;
     // Not the name field: a movement key still held at the moment of victory would type into it.
@@ -294,9 +316,13 @@ class Game {
     const { hostage, boss } = this.names;
     const ending = this.config.characters.boss.enabled ? `Defeat ${boss} to set them free.` : 'Reach them to set them free.';
     $('controls-hint').textContent = 'Move with WASD or the arrow keys. Attacks fire on their own; hold the mouse button to aim.';
+    const endless = this.gameMode === 'endless';
+    const bossWarning = this.config.characters.boss.enabled ? ` Very rarely, ${boss} comes hunting too.` : '';
     this.overlay({
-      heading: `Rescue ${hostage}`,
-      text: `Keep moving and destroy what chases you. Each kill lights up the way to ${hostage}. ${ending}`,
+      heading: endless ? 'Endless run' : `Rescue ${hostage}`,
+      text: endless
+        ? `No one to rescue, nowhere to reach. Survive for as long as you can.${bossWarning}`
+        : `Keep moving and destroy what chases you. Each kill lights up the way to ${hostage}. ${ending}`,
       action: site.startLabel,
       roster: true,
       picker: true,
@@ -307,11 +333,12 @@ class Game {
   start() {
     this.pendingMap = null;
     this.finishedRun = null;
-    this.runToken = startRun(this.mapId);
+    this.runToken = startRun(this.mapId, this.gameMode);
+    this.sounds.unlock();
     this.renderer.camera = null;
     this.renderer.particles.length = 0;
     this.renderer.rings.length = 0;
-    this.state = createGame(this.config, { view: this.renderer.view });
+    this.state = this.newGame();
     this.hintExplained = false;
     this.mode = 'playing';
     this.accumulator = 0;
@@ -361,7 +388,9 @@ class Game {
   }
 
   prepareScoreForm(won) {
-    $('score-label').textContent = won ? 'Your name for the leaderboard' : 'Your name for the kill leaderboard';
+    const label = this.gameMode === 'endless' ? 'Your name for the Endless leaderboard'
+      : won ? 'Your name for the leaderboard' : 'Your name for the kill leaderboard';
+    $('score-label').textContent = label;
     let remembered = '';
     try {
       remembered = localStorage.getItem(NAME_KEY) ?? '';
@@ -402,8 +431,9 @@ class Game {
     } catch { /* private browsing */ }
     this.finishedRun = null;
     $('score-form').hidden = true;
-    this.buildMapPicker();
+    this.buildPickers();
     $('map-picker').hidden = false;
+    $('mode-picker').hidden = false;
     $('board-toggle').hidden = true;
     await this.showBoard(result.entry.id);
     $('overlay-action').focus({ preventScroll: true, focusVisible: false });
@@ -416,10 +446,10 @@ class Game {
     message.textContent = 'Loading…';
     host.replaceChildren(message);
     host.hidden = false;
-    const mapId = this.mapId;
+    const { mapId, gameMode } = this;
     try {
       const data = await fetchBoard();
-      if (mapId === this.mapId) renderBoard(host, data.maps[mapId], highlightId);
+      if (mapId === this.mapId && gameMode === this.gameMode) renderBoard(host, data.maps[mapId], highlightId, gameMode);
     } catch {
       message.textContent = 'Could not load the leaderboard.';
     }
@@ -442,6 +472,18 @@ class Game {
     this.renderer.handleEvent(event);
     const { companion, hostage, boss } = this.names;
     switch (event.type) {
+      case 'shot':
+        this.sounds.play(event.role, 'shoot', event, this.state.player);
+        break;
+      case 'kamikaze':
+        this.sounds.play(event.role, 'impact', event, this.state.player);
+        break;
+      case 'bossSpawn':
+        this.toast(`${boss} has appeared`, 3.2);
+        break;
+      case 'rocketeer':
+        this.toast(`${this.names.rocketeer} on the bus! Your guns can shoot its rockets down.`, 3.2);
+        break;
       case 'hint':
         if (!this.hintExplained) this.toast(`The light shows the general way to ${hostage}`);
         this.hintExplained = true;
@@ -545,6 +587,7 @@ class Game {
       if (this.toastTimer <= 0) $('toast').hidden = true;
     }
     this.renderer.draw(this.state, this.mode === 'paused' || this.mode === 'levelup' ? 0 : dt);
+    this.sounds.update(this.state, this.renderer, this.mode === 'playing');
     requestAnimationFrame((t) => this.frame(t));
   }
 }

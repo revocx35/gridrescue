@@ -4,6 +4,8 @@ import { CELL_SIZE } from './sim.js';
 
 const ART_SIZE = 256;
 const TAU = Math.PI * 2;
+const SIGN_WIDTH = 150;
+const SIGN_LINE = 17;
 
 function tile(ctx, x, y, w, h, r) {
   ctx.beginPath();
@@ -180,12 +182,83 @@ const FOREST_ART = {
   missile: missileArt('#c9c4a6', '#d9772b'),
 };
 
+// The white wasteland's cast: dark and saturated, so it reads against the pale ground.
+const WASTELAND_ART = {
+  player(c) {
+    c.fillStyle = '#7a2e1c'; tile(c, 20, 44, 14, 34, 7); tile(c, 66, 44, 14, 34, 7);
+    c.fillStyle = '#c8502c'; tile(c, 26, 40, 48, 50, 14);
+    c.fillStyle = '#f4e9d8'; tile(c, 26, 40, 48, 9, 4);
+    c.fillStyle = '#5e4a3a'; disc(c, 50, 28, 23);
+    c.fillStyle = '#e8bd94'; disc(c, 50, 30, 15);
+    c.fillStyle = '#1c2a33'; tile(c, 37, 25, 26, 8, 4);
+  },
+  companion(c) {
+    c.fillStyle = '#39424c'; poly(c, [[24, 36], [18, 6], [44, 24]]); poly(c, [[76, 36], [82, 6], [56, 24]]);
+    c.fillStyle = '#56626e'; disc(c, 50, 50, 32);
+    c.fillStyle = '#eef2f5'; tile(c, 32, 50, 36, 34, 15);
+    c.fillStyle = '#7fd4ff'; disc(c, 38, 42, 5); disc(c, 62, 42, 5);
+    c.fillStyle = '#14181d'; tile(c, 44, 56, 12, 9, 4);
+  },
+  hostage(c) {
+    c.fillStyle = '#d8a72a'; tile(c, 28, 44, 44, 46, 12);
+    c.fillStyle = '#3a4048'; tile(c, 28, 62, 44, 8, 2);
+    c.fillStyle = '#ffd9a8'; disc(c, 50, 28, 19);
+    c.fillStyle = '#b3332a'; tile(c, 30, 9, 40, 15, 7);
+    c.fillStyle = '#3b2612'; disc(c, 43, 29, 3.4); disc(c, 57, 29, 3.4);
+  },
+  enemy1(c) {
+    c.fillStyle = '#16324a'; poly(c, [[20, 28], [10, 4], [36, 18]]); poly(c, [[80, 28], [90, 4], [64, 18]]);
+    c.fillStyle = '#25618f'; tile(c, 12, 18, 76, 72, 20);
+    c.fillStyle = '#cdeeff'; poly(c, [[12, 40], [30, 18], [46, 40]]); poly(c, [[54, 40], [70, 18], [88, 40]]);
+    c.fillStyle = '#0a1a28'; tile(c, 24, 58, 52, 22, 8);
+    c.fillStyle = '#ff5b3d'; disc(c, 36, 69, 6); disc(c, 64, 69, 6);
+  },
+  enemy2(c) {
+    c.fillStyle = '#4a4238'; poly(c, [[50, 4], [64, 26], [94, 30], [74, 54], [84, 90], [50, 74], [16, 90], [26, 54], [6, 30], [36, 26]]);
+    c.fillStyle = '#231e18'; disc(c, 50, 48, 18);
+    c.fillStyle = '#ff9a3d'; disc(c, 43, 46, 5); disc(c, 57, 46, 5);
+  },
+  boss(c) {
+    c.fillStyle = '#1a3b5c'; tile(c, 2, 36, 26, 42, 11); tile(c, 72, 36, 26, 42, 11);
+    c.fillStyle = '#2a6aa0'; tile(c, 16, 26, 68, 68, 18);
+    c.fillStyle = '#d9f2ff'; poly(c, [[24, 32], [20, 2], [36, 18], [50, 0], [64, 18], [80, 2], [76, 32]]);
+    c.fillStyle = '#0b1f30'; tile(c, 26, 40, 48, 26, 9);
+    c.fillStyle = '#7fe0ff'; poly(c, [[31, 46], [46, 54], [32, 60]]); poly(c, [[69, 46], [54, 54], [68, 60]]);
+    c.fillStyle = '#d9f2ff'; tile(c, 30, 74, 40, 7, 3);
+  },
+  enemy5(c) {
+    c.fillStyle = '#20486b'; poly(c, [[50, 2], [94, 28], [90, 76], [50, 98], [10, 76], [6, 28]]);
+    c.fillStyle = '#7fc4ec'; poly(c, [[50, 14], [82, 34], [78, 68], [50, 86], [22, 68], [18, 34]]);
+    c.fillStyle = '#e6f6ff'; poly(c, [[50, 14], [62, 40], [50, 62], [34, 44]]);
+    c.fillStyle = '#10283c'; disc(c, 40, 54, 6); disc(c, 62, 54, 6);
+  },
+  ball(c) {
+    c.fillStyle = '#5a93bd'; poly(c, [[32, 4], [70, 6], [97, 34], [92, 72], [64, 97], [28, 92], [3, 66], [6, 28]]);
+    c.fillStyle = '#b9e0f5'; poly(c, [[36, 14], [66, 16], [85, 40], [78, 68], [58, 84], [32, 80], [14, 58], [18, 34]]);
+    c.fillStyle = '#f2fbff'; disc(c, 40, 36, 14);
+  },
+  jet: jetArt('#3f4a57', '#2a333d', '#7fc4ec'),
+  missile: missileArt('#39424c', '#d8342a'),
+  rocketeer(c) {
+    c.fillStyle = '#2e3a2a'; tile(c, 28, 62, 14, 32, 6); tile(c, 58, 62, 14, 32, 6);
+    c.fillStyle = '#556b3a'; tile(c, 26, 38, 48, 40, 12);
+    c.fillStyle = '#3d3d3d'; tile(c, 58, 18, 40, 16, 5); // launcher on the shoulder
+    c.fillStyle = '#d8342a'; poly(c, [[98, 18], [100, 26], [98, 34]]);
+    c.fillStyle = '#e8bd94'; disc(c, 44, 28, 17);
+    c.fillStyle = '#2e3a2a'; tile(c, 26, 12, 36, 15, 7);
+    c.fillStyle = '#14181d'; tile(c, 38, 26, 18, 6, 3);
+  },
+  rocket: missileArt('#556b3a', '#ff7a3d'),
+};
+
+const MAP_ART = { forest: FOREST_ART, wasteland: WASTELAND_ART };
+
 export function defaultSprite(mapId, role) {
   const canvas = document.createElement('canvas');
   canvas.width = canvas.height = ART_SIZE;
   const ctx = canvas.getContext('2d');
   ctx.scale(ART_SIZE / 100, ART_SIZE / 100);
-  (mapId === 'forest' ? FOREST_ART : ART)[role](ctx);
+  (MAP_ART[mapId] ?? ART)[role](ctx);
   return canvas;
 }
 
@@ -224,12 +297,27 @@ function tankStamp([hull, shade]) {
   });
 }
 
+/** A wrecked bus from above, front to the right. Matches the three collision circles in scenery.js. */
+function busStamp([body, roof]) {
+  return stamp(240, (c) => {
+    c.fillStyle = 'rgba(40,50,60,0.3)'; tile(c, -100, -32, 212, 76, 12);
+    c.fillStyle = body; tile(c, -104, -38, 208, 76, 12);
+    c.fillStyle = roof; tile(c, -92, -28, 184, 56, 8);
+    c.fillStyle = '#1c2228';
+    for (const x of [-82, -50, -18, 14, 46]) { tile(c, x, -36, 24, 7, 2); tile(c, x, 29, 24, 7, 2); }
+    c.fillStyle = '#9fc4d6'; tile(c, 88, -28, 12, 56, 4); // windscreen
+    c.fillStyle = '#b5512a'; disc(c, -60, 14, 11); disc(c, 40, -14, 8);
+    c.fillStyle = '#3a4048'; tile(c, -26, -22, 52, 44, 6); // the roof platform the Rocketeer stands on
+  });
+}
+
 let sceneryStamps = null;
 
 function getSceneryStamps() {
   sceneryStamps ??= {
     tree: [['#1a3a1e', '#27562a', '#3a7337'], ['#1c3320', '#2e5a2c', '#4a7c35'], ['#2a3a16', '#46611f', '#6b8430']].map(treeStamp),
     tank: [['#4a5236', '#333a26'], ['#3b3d33', '#292b24']].map(tankStamp),
+    bus: [['#c9a227', '#a8861c'], ['#a23c2c', '#823024'], ['#5b7083', '#465767']].map(busStamp),
   };
   return sceneryStamps;
 }
@@ -310,6 +398,7 @@ export class Renderer {
     this.shake = 0;
     this.clock = 0;
     this.reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    this.signLines = new Map();
   }
 
   resize() {
@@ -330,6 +419,12 @@ export class Renderer {
   setMap(config, sprites) {
     this.config = config;
     this.sprites = sprites;
+    this.signLines.clear();
+  }
+
+  /** Whether a position is on or close to the screen. */
+  inView(a, margin) {
+    return Boolean(this.camera) && this.#visible(a, margin);
   }
 
   /** The world position under a point given in CSS pixels from the canvas's top-left corner. */
@@ -355,9 +450,15 @@ export class Renderer {
   handleEvent(event) {
     const { accent, accent2 } = this.config.site.colors;
     if (event.type === 'kill') {
-      const look = { enemy1: ['#ff6b78', 26, 7], enemy2: ['#f07ac0', 14, 2], enemy5: ['#c084ff', 60, 12], jet: ['#ffb347', 70, 14] }[event.kind];
+      const look = {
+        enemy1: ['#ff6b78', 26, 7], enemy2: ['#f07ac0', 14, 2], enemy5: ['#c084ff', 60, 12], jet: ['#ffb347', 70, 14],
+        boss: ['#ffc247', 90, 14], rocketeer: ['#ff9a3d', 30, 6],
+      }[event.kind];
       this.burst(event.x, event.y, look[0], look[1]);
       this.shake = Math.max(this.shake, look[2]);
+    } else if (event.type === 'kamikaze') {
+      this.burst(event.x, event.y, '#ff7a3d', 44, 340);
+      this.shake = Math.max(this.shake, 10);
     } else if (event.type === 'missileDown') {
       this.burst(event.x, event.y, '#ffb347', 22, 300);
       this.shake = Math.max(this.shake, 4);
@@ -397,6 +498,25 @@ export class Renderer {
     this.#drawHintCells(ctx, s, cells);
   }
 
+  #drawWastelandFloor(ctx, s, cam, cells) {
+    const { halfW, halfH } = this.view;
+    ctx.fillStyle = '#f1f4f6';
+    ctx.fillRect(cam.x - halfW - 2, cam.y - halfH - 2, halfW * 2 + 4, halfH * 2 + 4);
+    this.#forEachCell(cells, (cx, cy, n) => {
+      if (n < 0.6) return;
+      ctx.fillStyle = n > 0.82 ? '#f8fafb' : '#e9eef1';
+      ctx.beginPath();
+      ctx.ellipse((cx + 0.5) * CELL_SIZE, (cy + 0.5) * CELL_SIZE, 60 + n * 46, 30 + n * 26, n * 6, 0, TAU);
+      ctx.fill();
+    });
+    ctx.fillStyle = '#b8c3cc';
+    this.#forEachCell(cells, (cx, cy, n) => {
+      if (n > 0.09) return;
+      ctx.fillRect(cx * CELL_SIZE + 10 + n * 500, cy * CELL_SIZE + 46 - n * 300, 7 + n * 40, 2);
+    });
+    this.#drawHintCells(ctx, s, cells);
+  }
+
   #forEachCell({ x0, x1, y0, y1 }, visit) {
     for (let cx = x0; cx <= x1; cx++) {
       for (let cy = y0; cy <= y1; cy++) visit(cx, cy, cellNoise(cx, cy));
@@ -427,14 +547,16 @@ export class Renderer {
     const margin = 120;
     const smoke = [];
     forEachItemIn(s.world, cam.x - halfW - margin, cam.y - halfH - margin, cam.x + halfW + margin, cam.y + halfH + margin, (item) => {
+      if (item.kind === 'sign') {
+        this.#drawSign(ctx, item);
+        return;
+      }
       const set = stamps[item.kind];
       const art = set[Math.floor(item.variant * set.length)];
       ctx.save();
       ctx.translate(item.x, item.y);
-      if (item.kind === 'tank') {
-        ctx.rotate(item.angle);
-        smoke.push(item);
-      }
+      if (item.kind !== 'tree') ctx.rotate(item.angle);
+      if (item.kind === 'tank') smoke.push(item);
       ctx.drawImage(art.canvas, -art.size / 2, -art.size / 2, art.size, art.size);
       ctx.restore();
     });
@@ -448,6 +570,53 @@ export class Renderer {
       }
     }
     ctx.globalAlpha = 1;
+  }
+
+  /** Wraps a sign's text to at most SIGN_WIDTH, remembering the result: it never changes during a game. */
+  #signLines(ctx, text) {
+    let lines = this.signLines.get(text);
+    if (lines) return lines;
+    lines = [];
+    let line = '';
+    for (const word of text.split(/\s+/)) {
+      const joined = line ? `${line} ${word}` : word;
+      if (line && ctx.measureText(joined).width > SIGN_WIDTH) {
+        lines.push(line);
+        line = word;
+      } else {
+        line = joined;
+      }
+    }
+    lines.push(line);
+    this.signLines.set(text, lines);
+    return lines;
+  }
+
+  #drawSign(ctx, item) {
+    const { signs } = this.config;
+    if (!signs.length) return;
+    const text = signs[Math.floor(item.variant * signs.length)];
+    ctx.save();
+    ctx.font = '800 14px ui-sans-serif, system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const lines = this.#signLines(ctx, text);
+    const width = Math.max(90, ...lines.map((line) => ctx.measureText(line).width)) + 26;
+    const height = lines.length * SIGN_LINE + 18;
+    const top = item.y - height - 26;
+    ctx.fillStyle = 'rgba(60,70,80,0.28)';
+    ctx.beginPath();
+    ctx.ellipse(item.x, item.y + 2, 22, 7, 0, 0, TAU);
+    ctx.fill();
+    ctx.fillStyle = '#54402c';
+    ctx.fillRect(item.x - 4, item.y - 30, 8, 32);
+    ctx.fillStyle = '#54402c';
+    tile(ctx, item.x - width / 2 - 3, top - 3, width + 6, height + 6, 5);
+    ctx.fillStyle = '#e3d3ac';
+    tile(ctx, item.x - width / 2, top, width, height, 3);
+    ctx.fillStyle = '#2b2118';
+    lines.forEach((line, i) => ctx.fillText(line, item.x, top + 9 + SIGN_LINE * (i + 0.5)));
+    ctx.restore();
   }
 
   #drawBall(ctx, b, size) {
@@ -476,6 +645,10 @@ export class Renderer {
     const y0 = Math.floor((cam.y - halfH) / CELL_SIZE);
     const y1 = Math.floor((cam.y + halfH) / CELL_SIZE);
     const cells = { x0, x1, y0, y1 };
+    if (s.world?.kind === 'wasteland') {
+      this.#drawWastelandFloor(ctx, s, cam, cells);
+      return;
+    }
     if (s.world) {
       this.#drawForestFloor(ctx, s, cam, cells);
       return;
@@ -621,14 +794,15 @@ export class Renderer {
   }
 
   #drawMissiles(ctx, s) {
-    const { size } = this.config.characters.missile;
     for (const m of s.missiles) {
       if (!this.#visible(m)) continue;
+      const role = m.kind === 'rocket' ? 'rocket' : 'missile';
+      const { size } = this.config.characters[role];
       ctx.fillStyle = '#ffb347';
       ctx.globalAlpha = 0.75;
       disc(ctx, m.x - Math.cos(m.heading) * size * 0.55, m.y - Math.sin(m.heading) * size * 0.55, size * (0.14 + Math.random() * 0.1));
       ctx.globalAlpha = 1;
-      this.#drawHeaded(ctx, 'missile', m, size, 8);
+      this.#drawHeaded(ctx, role, m, size, 8);
       // A pulsing ring marks it as something to click.
       ctx.strokeStyle = 'rgba(255,77,94,0.8)';
       ctx.lineWidth = 2;
@@ -737,19 +911,19 @@ export class Renderer {
 
     this.#drawFloor(ctx, s, cam);
     this.#drawHintBeam(ctx, s);
-    this.#drawArena(ctx, s);
+    if (s.hostage) this.#drawArena(ctx, s);
     this.#drawScenery(ctx, s, cam);
 
     this.#drawOrbs(ctx, s);
 
     const walk = Math.sin(this.clock * 13) * 2;
-    if (this.#visible(s.hostage)) {
+    if (s.hostage && this.#visible(s.hostage)) {
       this.#drawActor(ctx, 'hostage', { ...s.hostage, face: 1, flash: 0 }, characters.hostage.size, Math.sin(this.clock * 4) * 1.5);
     }
     for (const e of s.enemies) {
       if (!this.#visible(e, 200)) continue;
       if (e.kind === 'jet') this.#drawHeaded(ctx, 'jet', e, e.size, 34);
-      else this.#drawActor(ctx, e.kind, e, e.size, walk);
+      else this.#drawActor(ctx, e.kind, e, e.size, e.kind === 'rocketeer' ? 0 : walk);
     }
     if (s.boss.alive && this.#visible(s.boss, 260)) {
       if (s.boss.windup > 0) {
@@ -831,7 +1005,7 @@ export class Renderer {
     if (s.boss.alive && this.#visible(s.boss, 260)) {
       this.#label(ctx, characters.boss.name, s.boss.x, s.boss.y - s.boss.size / 2 - 8, '#ffc247', 15);
     }
-    if (this.#visible(s.hostage)) {
+    if (s.hostage && this.#visible(s.hostage)) {
       this.#label(ctx, characters.hostage.name, s.hostage.x, s.hostage.y - characters.hostage.size / 2 - 32, '#ffd9a8', 13);
     }
     for (const m of s.companions) {

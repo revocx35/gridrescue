@@ -17,7 +17,11 @@ export const BOARD_SIZE = 10;
 const fastestFirst = (a, b) => a.time - b.time || b.kills - a.kills || a.at - b.at;
 const mostKillsFirst = (a, b) => b.kills - a.kills || a.time - b.time || a.at - b.at;
 const sorted = (entries, order) => [...entries].sort(order);
-const rescues = (entries) => entries.filter((entry) => entry.won !== false); // saved before deaths could rank
+const longestFirst = (a, b) => b.time - a.time || b.kills - a.kills || a.at - b.at;
+const isEndless = (entry) => entry.mode === 'endless';
+const rescueRuns = (entries) => entries.filter((entry) => !isEndless(entry)); // saved before modes existed
+const endlessRuns = (entries) => entries.filter(isEndless);
+const rescues = (entries) => rescueRuns(entries).filter((entry) => entry.won !== false); // saved before deaths could rank
 
 export class RunTokens {
   constructor(now = Date.now) {
@@ -60,11 +64,11 @@ export class RunTokens {
   }
 
   /** limits comes from scoreLimits, frozen here so an admin edit mid-run cannot invalidate the run. */
-  issue(map, limits) {
+  issue(map, limits, mode = 'rescue') {
     this.#sweep();
     while (this.runs.size >= MAX_OPEN_RUNS) this.runs.delete(this.runs.keys().next().value);
     const token = randomToken();
-    this.runs.set(hashToken(token), { map, limits, started: this.now() });
+    this.runs.set(hashToken(token), { map, mode, limits, started: this.now() });
     return token;
   }
 
@@ -83,6 +87,7 @@ export class RunTokens {
     if (typeof won !== 'boolean' || !Number.isFinite(time) || time < 0 || !Number.isInteger(kills) || kills < 0) return 'bad_values';
     const elapsed = (this.now() - run.started) / 1000;
     const { minTime, minSpawnGap } = run.limits;
+    if (won && run.mode === 'endless') return 'bad_values'; // there is nothing to win
     if (won && time < minTime) return 'too_fast';
     if (!won && kills === 0) return 'no_kills';
     if (time > elapsed + CLOCK_GRACE_SECONDS) return 'longer_than_real_time';
@@ -126,12 +131,16 @@ export class Leaderboard {
   }
 
   /** Adds a score, keeps only the entries that still rank, and reports where this one landed. */
-  add(map, { name, time, kills, won }) {
-    const entry = { id: crypto.randomBytes(8).toString('hex'), name, time, kills, won, at: this.now() };
+  add(map, { name, time, kills, won, mode = 'rescue' }) {
+    const entry = { id: crypto.randomBytes(8).toString('hex'), name, time, kills, won, mode, at: this.now() };
     const entries = [...this.maps[map], entry];
-    const fastest = sorted(rescues(entries), fastestFirst).slice(0, KEEP_PER_RANKING);
-    const mostKills = sorted(entries, mostKillsFirst).slice(0, KEEP_PER_RANKING);
-    const keep = new Set([...fastest, ...mostKills]);
+    const top = (list, order) => sorted(list, order).slice(0, KEEP_PER_RANKING);
+    const keep = new Set([
+      ...top(rescues(entries), fastestFirst),
+      ...top(rescueRuns(entries), mostKillsFirst),
+      ...top(endlessRuns(entries), mostKillsFirst),
+      ...top(endlessRuns(entries), longestFirst),
+    ]);
     this.maps[map] = entries.filter((item) => keep.has(item));
     this.#save();
     return { entry };
@@ -140,10 +149,15 @@ export class Leaderboard {
   /** The public view: the top of each ranking for each map. */
   view() {
     return {
-      maps: Object.fromEntries(MAPS.map((map) => [map, {
-        fastest: sorted(rescues(this.maps[map]), fastestFirst).slice(0, BOARD_SIZE),
-        kills: sorted(this.maps[map], mostKillsFirst).slice(0, BOARD_SIZE),
-      }])),
+      maps: Object.fromEntries(MAPS.map((map) => {
+        const top = (list, order) => sorted(list, order).slice(0, BOARD_SIZE);
+        return [map, {
+          fastest: top(rescues(this.maps[map]), fastestFirst),
+          kills: top(rescueRuns(this.maps[map]), mostKillsFirst),
+          endlessKills: top(endlessRuns(this.maps[map]), mostKillsFirst),
+          endlessTime: top(endlessRuns(this.maps[map]), longestFirst),
+        }];
+      })),
     };
   }
 

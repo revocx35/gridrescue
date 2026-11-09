@@ -7,9 +7,9 @@ const postJson = (url, body) => fetch(url, {
 });
 
 /** Registers a run with the server. Resolves to its token, or null if the server cannot be reached. */
-export async function startRun(map) {
+export async function startRun(map, mode) {
   try {
-    const response = await postJson('/api/runs', { map });
+    const response = await postJson('/api/runs', { map, mode });
     return response.ok ? (await response.json()).token : null;
   } catch {
     return null;
@@ -71,7 +71,14 @@ function ranking(title, entries, valueOf, highlightId, emptyText) {
   return section;
 }
 
-export function renderBoard(host, board, highlightId) {
+export function renderBoard(host, board, highlightId, mode) {
+  if (mode === 'endless') {
+    host.replaceChildren(
+      ranking('Most kills', board.endlessKills, (entry) => String(entry.kills), highlightId, 'No scores yet'),
+      ranking('Longest run', board.endlessTime, (entry) => formatRunTime(entry.time), highlightId, 'No scores yet'),
+    );
+    return;
+  }
   host.replaceChildren(
     ranking('Fastest rescue', board.fastest, (entry) => formatRunTime(entry.time), highlightId, 'No rescues yet'),
     ranking('Most kills', board.kills, (entry) => String(entry.kills), highlightId, 'No scores yet'),

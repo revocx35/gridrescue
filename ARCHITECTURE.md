@@ -25,6 +25,10 @@ are deleted on every commit. A monotonically increasing `revision` gives optimis
   from hashing cell coordinates.
 - The config holds several maps (`config.maps.<id>`: `name`, `characters`). `site` and `gameplay` are shared. The player
   picks a map on the start or end screen; sprites load per map on first use.
+- The wasteland (`scenery.js`) has the same chunk system with its own contents: buses and text signs. Signs are decoration chosen from the admin's list by a seeded roll. Buses block walking
+  but not shots. A Rocketeer stands on each bus that comes near the view, never moves and can be killed. A kill keeps that bus empty for the rest of the run; walking far enough away despawns the Rocketeer, and it is back when the player returns. The Rocketeer and its rocket exist only on this map.
+- Rocketeers launch guided rockets on the Kh-29's homing rules. Unlike a Kh-29, a rocket can be shot down by any bullet and is a target for the player's and companions' auto-aim, which counts it as nearer than it is. A click or tap also destroys it.
+- A game runs in one of two modes, chosen on the start screen. Rescue is the original game. Endless has no hostage, no arena and no guardian boss: `s.hostage` is null and spawns never stop until the player dies. The boss can then appear, rarely (`bossChance`, after a minute, one at a time), as a regular enemy that uses its attack type and counts as a kill. Kills light no direction hint.
 - The forest map (`scenery.js`) builds obstacles per 480 px chunk from a per-run seed: slow noise decides forest or open
   ground, jittered cells place trees, and each chunk rolls for wrecked tanks. Chunks are pure functions of the seed, so the
   cache can be dropped at any time and nothing is stored. Trees and tanks are circles to collision. Actors slide around
@@ -49,7 +53,7 @@ are deleted on every commit. A monotonically increasing `revision` gives optimis
   width, so the true direction is always inside it, but never reliably in the middle.
 - The companion spawns at `companionKills` kills or within `companionDistance` of the hostage, whichever is first, so
   it always arrives before the player does. When downed it returns after 9 seconds.
-- Each enemy role has an `attackType`. Melee hits on contact. Sniper stops at long range, shows an aim line, locks its
+- Each enemy role has an `attackType`. Melee hits on contact. Kamikaze runs at its target and dies on contact, dealing its damage once, with no kill or XP unless a shot gets it first. It is not offered for the boss. Sniper stops at long range, shows an aim line, locks its
   direction and fires one fast bullet. Pump closes in and fires a five-pellet spread. Ranged enemies only fire from inside
   the player's view and do no contact damage.
 - The boss's attack type replaces its primary attack: pump is the fan plus the ring, sniper is single fast bullets, and
@@ -71,6 +75,16 @@ life). When a run ends the browser posts the token, a name, the time, the kills 
 kills and need at least one kill. The map comes from the token. Each map keeps its top 50 by shortest time and top 50 by most kills in `leaderboard.json`; the public view shows
 ten of each. Open run tokens are written to `open-runs.json` on shutdown and read back once at start, so a deploy does not cost players
 their run. A crash still loses them. Every rejected score logs why, without the name or token.
+
+Endless runs rank separately, by most kills and longest run, and share the map's file. A run's mode comes from its token, like the map, and an Endless run cannot be a win. Rocketeers come on top of the spawn pacing, so on the wasteland the kill-rate limit also allows for the most buses a player could pass.
+
+## Sound
+
+There are no built-in sounds. Each map's characters have upload slots (`SOUND_SLOTS`), and an empty slot is silent. The simulation emits `shot` and `kamikaze` events naming the role. `sound.js` turns these into one-shots that fade with distance, and each frame loops the idle sound of every role with an actor nearby and the boss theme while a boss is on screen. Audio needs a user gesture, so the context starts on the first press.
+
+Slots: player shoot; companion idle and shoot; hostage idle; enemies, Su-34 and Rocketeer idle and shoot (a melee hit counts as the shoot sound); enemy 1 and 2 also have the kamikaze impact; boss theme only.
+
+Sounds are stored by content hash in `sounds/`, and unreferenced files are removed on every commit like sprites. The admin's browser keeps MP3 as it is and converts anything else to WAV at the best quality under 16 MB. The server walks the structure, keeps only the audio frames or samples, and never decodes anything. Playback uses `fetch` and Web Audio, so the CSP has no media source.
 
 ## Page layout
 
@@ -120,7 +134,8 @@ each side of the game because there is not enough height to stack them.
 | Abusive or disguised public names | 20 characters, control, zero-width and direction-override characters rejected, plain text only; admins can delete entries |
 | XSS through names or text | `textContent` and canvas only; strict CSP with no inline script or style; input limits reject control characters |
 | Malicious uploads | Admin-only, 2 MB cap, PNG parsed chunk by chunk with CRC checks, dimension limit, bounded inflate against bombs, rebuilt from a chunk allowlist so metadata and trailing payloads are dropped; stored by hash; served as `image/png` with `nosniff` and a sandbox CSP |
-| Path traversal | Sprite paths come only from a validated SHA-256 name |
+| Malicious audio uploads | Admin-only, 16 MB cap, only WAV (PCM) and MPEG Layer III accepted; each file is walked structurally and rebuilt from its samples or frames, so tags, extra chunks and trailing payloads are dropped; stored by hash; served with a fixed audio type, `nosniff` and a sandbox CSP |
+| Path traversal | Sprite and sound paths come only from a validated SHA-256 name |
 | Abuse and resource exhaustion | Per-IP rate limits, 64 KB JSON limit, capped sessions, pending logins and connections, request timeouts |
 | Information leaks | Generic error bodies and sign-in messages; cookies, tokens and callback query strings are excluded from logs; `no-store` on private responses |
 | Network interception | TLS on every hop; the proxy pins the container's certificate; the OIDC client verifies certificates; HSTS |

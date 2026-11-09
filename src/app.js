@@ -6,8 +6,9 @@ import cookie from '@fastify/cookie';
 import fastifyStatic from '@fastify/static';
 import rateLimit from '@fastify/rate-limit';
 import * as oidcClient from 'openid-client';
-import { MAPS, ROLES, cleanScoreName, mapConfig, validateConfig } from '../public/js/schema.js';
+import { GAME_MODES, MAPS, MAX_SOUND_BYTES, SOUND_FILE, SOUND_SLOTS, cleanScoreName, mapConfig, mapRoles, validateConfig } from '../public/js/schema.js';
 import { scoreLimits } from '../public/js/sim.js';
+import { AUDIO_TYPES, InvalidAudio, sanitizeAudio } from './audio.js';
 import { InvalidPng, MAX_SPRITE_BYTES, sanitizePng } from './png.js';
 import { PENDING_LOGIN_MS, SESSION_ABSOLUTE_MS, randomToken, safeEqual } from './sessions.js';
 
@@ -85,6 +86,10 @@ export async function createApp(options) {
     done(null, body);
   });
 
+  app.addContentTypeParser(AUDIO_TYPES, { parseAs: 'buffer', bodyLimit: MAX_SOUND_BYTES }, (req, body, done) => {
+    done(null, body);
+  });
+
   await app.register(fastifyStatic, {
     root: PUBLIC_DIR,
     index: ['index.html'],
@@ -112,6 +117,17 @@ export async function createApp(options) {
       .send(png);
   });
 
+  app.get('/sounds/:file', async (request, reply) => {
+    const { file } = request.params;
+    const audio = SOUND_FILE.test(file) && store.readSound(file);
+    if (!audio) return reply.code(404).send({ error: 'not_found' });
+    return reply
+      .header('Cache-Control', 'public, max-age=31536000, immutable')
+      .header('Content-Security-Policy', "default-src 'none'; sandbox")
+      .type(file.endsWith('.mp3') ? 'audio/mpeg' : 'audio/wav')
+      .send(audio);
+  });
+
   // ---- leaderboard ----
 
   const isObject = (value) => typeof value === 'object' && value !== null;
@@ -124,9 +140,9 @@ export async function createApp(options) {
 
   app.post('/api/runs', publicWrite(limits.run), async (request, reply) => {
     reply.header('Cache-Control', 'no-store');
-    const map = isObject(request.body) ? request.body.map : null;
-    if (!MAPS.includes(map)) return reply.code(400).send({ error: 'bad_request' });
-    return { token: runs.issue(map, scoreLimits(mapConfig(store.snapshot().config, map))) };
+    const { map, mode = GAME_MODES[0] } = isObject(request.body) ? request.body : {};
+    if (!MAPS.includes(map) || !GAME_MODES.includes(mode)) return reply.code(400).send({ error: 'bad_request' });
+    return { token: runs.issue(map, scoreLimits(mapConfig(store.snapshot().config, map)), mode) };
   });
 
   app.post('/api/leaderboard', publicWrite(limits.score), async (request, reply) => {
@@ -142,7 +158,7 @@ export async function createApp(options) {
       request.log.warn({ problem, runSeconds: time, kills, won }, 'score rejected');
       return reply.code(403).send({ error: 'invalid_run' });
     }
-    return leaderboard.add(run.map, { name, time: Math.round(time * 100) / 100, kills, won });
+    return leaderboard.add(run.map, { name, time: Math.round(time * 100) / 100, kills, won, mode: run.mode });
   });
 
   app.get('/admin', async (request, reply) => reply.sendFile('admin.html'));
@@ -257,7 +273,7 @@ export async function createApp(options) {
 
   /** True when the URL names a real map and role; otherwise answers 404. */
   const knownSlot = ({ params }, reply) => {
-    if (MAPS.includes(params.map) && ROLES.includes(params.role)) return true;
+    if (MAPS.includes(params.map) && mapRoles(params.map).includes(params.role)) return true;
     reply.code(404).send({ error: 'not_found' });
     return false;
   };
@@ -281,6 +297,35 @@ export async function createApp(options) {
   app.delete('/api/admin/sprites/:map/:role', writeRoute(), async (request, reply) => {
     if (!knownSlot(request, reply)) return reply;
     store.clearSprite(request.params.map, request.params.role);
+    return adminState(request.session);
+  });
+
+  /** True when the URL names a sound slot this role really has; otherwise answers 404. */
+  const knownSound = (request, reply) => {
+    if (!knownSlot(request, reply)) return false;
+    if (SOUND_SLOTS[request.params.role]?.includes(request.params.slot)) return true;
+    reply.code(404).send({ error: 'not_found' });
+    return false;
+  };
+
+  app.put('/api/admin/sounds/:map/:role/:slot', writeRoute({ bodyLimit: MAX_SOUND_BYTES }), async (request, reply) => {
+    if (!knownSound(request, reply)) return reply;
+    let audio;
+    try {
+      audio = sanitizeAudio(request.headers['content-type'], request.body);
+    } catch (err) {
+      if (!(err instanceof InvalidAudio)) throw err;
+      return reply.code(422).send({ error: 'invalid_audio' });
+    }
+    const { map, role, slot } = request.params;
+    store.setSound(map, role, slot, audio);
+    return adminState(request.session);
+  });
+
+  app.delete('/api/admin/sounds/:map/:role/:slot', writeRoute(), async (request, reply) => {
+    if (!knownSound(request, reply)) return reply;
+    const { map, role, slot } = request.params;
+    store.clearSound(map, role, slot);
     return adminState(request.session);
   });
 

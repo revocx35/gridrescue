@@ -1,7 +1,7 @@
-// The forest map's obstacles. Generated per chunk from a seed, so the world is endless, needs no
+// Map obstacles and decoration. Generated per chunk from a seed, so the world is endless, needs no
 // storage, and the rules and the renderer always agree on where everything is.
 
-const CHUNK_SIZE = 480;
+export const CHUNK_SIZE = 480;
 const TREE_CELL = 120;
 const TREE_JITTER = 40;
 const TREE_RADIUS = 24;
@@ -14,6 +14,12 @@ const TANK_CHANCES = [0.62, 0.28];
 const FOREST_SCALE = 900;
 const TREE_CHANCE_IN_FOREST = 0.82;
 const TREE_CHANCE_IN_OPEN = 0.07;
+export const BUS_CHANCE = 0.2;
+const BUS_MARGIN = 130; // keeps a whole bus inside its chunk, whichever way it points
+const BUS_PART_RADIUS = 36;
+const BUS_PART_OFFSETS = [-66, 0, 66];
+const SIGN_CHANCES = [0.5, 0.2];
+const SIGN_BUS_GAP = 170;
 const MAX_CACHED_CHUNKS = 400;
 const KEY_SHIFT = 2 ** 21;
 
@@ -43,7 +49,44 @@ function forestAmount(seed, x, y) {
 
 /** clearings: [{ x, y, r }] areas that stay free of obstacles. */
 export function createForest(seed, clearings) {
-  return { seed, clearings, chunks: new Map() };
+  return { kind: 'forest', seed, clearings, chunks: new Map() };
+}
+
+/** Buses block walking but shots fly over them, or nothing could reach the Rocketeer on the roof. */
+export function createWasteland(seed, clearings) {
+  return { kind: 'wasteland', seed, clearings, chunks: new Map() };
+}
+
+function buildWastelandChunk(world, cx, cy) {
+  const { seed, clearings } = world;
+  const left = cx * CHUNK_SIZE;
+  const top = cy * CHUNK_SIZE;
+  const roll = (salt) => hash(seed, cx, cy, salt);
+  const items = [];
+  const circles = [];
+  let bus = null;
+  if (roll(1) < BUS_CHANCE) {
+    const span = CHUNK_SIZE - BUS_MARGIN * 2;
+    const x = left + BUS_MARGIN + roll(2) * span;
+    const y = top + BUS_MARGIN + roll(3) * span;
+    const reach = BUS_PART_OFFSETS.at(-1) + BUS_PART_RADIUS;
+    if (!clearings.some((c) => Math.hypot(x - c.x, y - c.y) < c.r + reach)) {
+      const angle = roll(4) * Math.PI;
+      bus = { kind: 'bus', id: `${cx}:${cy}`, x, y, angle, variant: roll(5) };
+      items.push(bus);
+      for (const offset of BUS_PART_OFFSETS) {
+        circles.push({ x: x + Math.cos(angle) * offset, y: y + Math.sin(angle) * offset, r: BUS_PART_RADIUS });
+      }
+    }
+  }
+  SIGN_CHANCES.forEach((chance, i) => {
+    if (roll(10 + i * 10) >= chance) return;
+    const x = left + TANK_MARGIN + roll(11 + i * 10) * (CHUNK_SIZE - TANK_MARGIN * 2);
+    const y = top + TANK_MARGIN + roll(12 + i * 10) * (CHUNK_SIZE - TANK_MARGIN * 2);
+    if (bus && Math.hypot(x - bus.x, y - bus.y) < SIGN_BUS_GAP) return;
+    items.push({ kind: 'sign', x, y, variant: roll(13 + i * 10) });
+  });
+  return { items, circles, cover: [] };
 }
 
 function buildChunk(world, cx, cy) {
@@ -89,7 +132,7 @@ function buildChunk(world, cx, cy) {
       circles.push({ x, y, r: TREE_RADIUS });
     }
   }
-  return { items, circles };
+  return { items, circles, cover: circles };
 }
 
 function chunkAt(world, cx, cy) {
@@ -97,7 +140,7 @@ function chunkAt(world, cx, cy) {
   let chunk = world.chunks.get(key);
   if (!chunk) {
     if (world.chunks.size >= MAX_CACHED_CHUNKS) world.chunks.clear(); // any chunk can be rebuilt exactly
-    chunk = buildChunk(world, cx, cy);
+    chunk = (world.kind === 'wasteland' ? buildWastelandChunk : buildChunk)(world, cx, cy);
     world.chunks.set(key, chunk);
   }
   return chunk;
@@ -115,10 +158,11 @@ function someChunk(world, minX, minY, maxX, maxY, visit) {
   return false;
 }
 
+/** Whether something at this point is stopped by cover. Only projectiles ask. */
 export function hitsSolid(world, x, y) {
   if (!world) return false;
   return someChunk(world, x, y, x, y, (chunk) =>
-    chunk.circles.some((c) => (x - c.x) ** 2 + (y - c.y) ** 2 < c.r ** 2));
+    chunk.cover.some((c) => (x - c.x) ** 2 + (y - c.y) ** 2 < c.r ** 2));
 }
 
 /** Moves an actor out of anything solid and along its edge, so walking at a trunk never stalls. */
@@ -144,7 +188,7 @@ export function pushOutOfSolids(world, a, dt) {
   });
 }
 
-/** Calls visit(item) for each tree and tank in the box. */
+/** Calls visit(item) for each piece of scenery in the chunks touching the box. */
 export function forEachItemIn(world, minX, minY, maxX, maxY, visit) {
   someChunk(world, minX, minY, maxX, maxY, (chunk) => {
     chunk.items.forEach(visit);

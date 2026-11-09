@@ -2,12 +2,23 @@
 // Imported by the server (authoritative validation) and the admin UI (form limits),
 // so a field only ever has to be described here.
 
-export const MAPS = ['grid', 'forest'];
+export const MAPS = ['grid', 'forest', 'wasteland'];
 
-export const ROLES = ['player', 'companion', 'hostage', 'enemy1', 'enemy2', 'boss', 'enemy5', 'ball', 'jet', 'missile'];
+export const GAME_MODES = ['rescue', 'endless'];
+
+export const ROLES = ['player', 'companion', 'hostage', 'enemy1', 'enemy2', 'boss', 'enemy5', 'ball', 'jet', 'missile', 'rocketeer', 'rocket'];
 
 /** Everything except projectiles, which have a texture and no name. */
-export const NAMED_ROLES = ROLES.filter((role) => role !== 'ball' && role !== 'missile');
+export const NAMED_ROLES = ROLES.filter((role) => !['ball', 'missile', 'rocket'].includes(role));
+
+// Only the wasteland has buses, and a Rocketeer has nowhere else to stand.
+const BUS_MAP = 'wasteland';
+const BUS_ROLES = ['rocketeer', 'rocket'];
+
+/** The roles that exist on one map. */
+export const mapRoles = (mapId) => ROLES.filter((role) => mapId === BUS_MAP || !BUS_ROLES.includes(role));
+
+export const hasSigns = (mapId) => mapId === BUS_MAP;
 
 export const ROLE_LABELS = {
   player: 'Player',
@@ -20,6 +31,8 @@ export const ROLE_LABELS = {
   ball: 'Enemy 5 large ball',
   jet: 'Su-34 (image facing right)',
   missile: 'Kh-29 missile (image facing right)',
+  rocketeer: 'Rocketeer (stands on the buses)',
+  rocket: 'Rocketeer rocket (image facing right)',
 };
 
 const COMBAT = ['size', 'hp', 'speed', 'damage'];
@@ -29,12 +42,37 @@ export const ROLE_FIELDS = {
   hostage: ['size'],
   enemy1: ['enabled', ...COMBAT, 'xp', 'attackType'],
   enemy2: ['enabled', ...COMBAT, 'xp', 'attackType'],
-  boss: ['enabled', ...COMBAT, 'attackType'],
+  boss: ['enabled', ...COMBAT, 'endlessXp', 'attackType'],
   enemy5: ['enabled', ...COMBAT, 'xp', 'fireInterval'],
   ball: ['size', 'speed', 'damage'],
   jet: ['enabled', 'size', 'hp', 'speed', 'xp', 'fireInterval'],
   missile: ['size', 'speed', 'damage'],
+  rocketeer: ['enabled', 'size', 'hp', 'xp', 'fireInterval'],
+  rocket: ['size', 'speed', 'damage'],
 };
+
+// Uploaded per map and role. There are no built-in sounds: an empty slot is silent.
+export const SOUND_SLOTS = {
+  player: ['shoot'],
+  companion: ['idle', 'shoot'],
+  hostage: ['idle'],
+  enemy1: ['idle', 'shoot', 'impact'],
+  enemy2: ['idle', 'shoot', 'impact'],
+  boss: ['theme'],
+  enemy5: ['idle', 'shoot'],
+  jet: ['idle', 'shoot'],
+  rocketeer: ['idle', 'shoot'],
+};
+
+export const SOUND_LABELS = {
+  idle: 'Idle (loops while it is near)',
+  shoot: 'Shoot (plays on each attack)',
+  impact: 'Impact (kamikaze attack only)',
+  theme: 'Theme song (loops while the boss is on screen)',
+};
+
+export const MAX_SOUND_BYTES = 16 * 1024 * 1024;
+export const SOUND_FILE = /^[0-9a-f]{64}\.(?:wav|mp3)$/;
 
 const REGULAR_ENEMIES = ['enemy1', 'enemy2', 'enemy5'];
 
@@ -46,10 +84,12 @@ export const CHARACTER_FIELDS = {
   damage: { label: 'Damage', min: 0, max: 5000, step: 1 },
   fireInterval: { label: 'Seconds between shots', min: 0.05, max: 5, step: 0.01 },
   xp: { label: 'XP dropped', min: 0, max: 100000, step: 1 },
+  endlessXp: { label: 'XP dropped (Endless mode)', min: 0, max: 100000, step: 1 },
   attackType: {
     label: 'Attack type',
-    options: ['melee', 'sniper', 'pump'],
-    optionLabels: { melee: 'Melee', sniper: 'Sniper (one bullet)', pump: 'Pump (spread)' },
+    options: ['melee', 'sniper', 'pump', 'kamikaze'],
+    optionLabels: { melee: 'Melee', sniper: 'Sniper (one bullet)', pump: 'Pump (spread)', kamikaze: 'Kamikaze (dies slamming into you)' },
+    notFor: { boss: ['kamikaze'] }, // the rescue is won by killing the boss, so it cannot blow itself up
   },
 };
 
@@ -63,6 +103,7 @@ export const GAMEPLAY_FIELDS = {
   enemy1Chance: { label: 'Chance a spawn is Enemy 1 (0 to 1)', min: 0, max: 1, step: 0.01 },
   enemy5Chance: { label: 'Chance a spawn is Enemy 5 (0 to 1)', min: 0, max: 1, step: 0.01 },
   jetChance: { label: 'Chance a spawn is the Su-34 (0 to 1)', min: 0, max: 1, step: 0.001 },
+  bossChance: { label: 'Chance a spawn is the boss in Endless mode (0 to 1)', min: 0, max: 1, step: 0.001 },
   difficultyKills: { label: 'Kills per difficulty level', min: 1, max: 10000, step: 1 },
   difficultyIncrease: { label: 'Enemy stat increase per level (%)', min: 0, max: 1000, step: 1 },
   maxEnemies: { label: 'Most enemies at once', min: 1, max: 120, step: 1 },
@@ -111,6 +152,8 @@ export const ORDER_LABELS = { title: 'Game title', game: 'Game', joystick: 'Joys
 
 export const MAX_NAME_LENGTH = 32;
 export const MAX_MAP_NAME_LENGTH = 32;
+export const MAX_SIGNS = 20;
+export const MAX_SIGN_LENGTH = 48;
 
 const NAMES = {
   grid: {
@@ -121,28 +164,41 @@ const NAMES = {
     map: 'Burnt Forest', player: 'Ranger', companion: 'Hound', hostage: 'Pilot',
     enemy1: 'Ironback', enemy2: 'Scavenger', boss: 'Tank Lord', enemy5: 'Colossus', jet: 'Su-34',
   },
+  wasteland: {
+    map: 'White Wasteland', player: 'Drifter', companion: 'Husky', hostage: 'Surveyor',
+    enemy1: 'Frostback', enemy2: 'Scrapper', boss: 'Snow King', enemy5: 'Glacier', jet: 'Su-34', rocketeer: 'Rocketeer',
+  },
 };
+
+const DEFAULT_SIGNS = ['TURN BACK', 'NO SIGNAL', 'LAST BUS LEFT YEARS AGO', 'DO NOT FEED THE ROCKETEERS', 'NOTHING AHEAD'];
 
 function defaultCharacters(map) {
   const names = NAMES[map];
-  return {
+  const characters = {
     player: { name: names.player, sprite: null, size: 46, hp: 100, speed: 255, damage: 18, fireInterval: 0.26 },
     companion: { name: names.companion, sprite: null, enabled: true, size: 40, hp: 80, speed: 285, damage: 10, fireInterval: 0.4 },
     hostage: { name: names.hostage, sprite: null, size: 44 },
     enemy1: { name: names.enemy1, sprite: null, enabled: true, size: 62, hp: 130, speed: 135, damage: 20, xp: 40, attackType: 'melee' },
     enemy2: { name: names.enemy2, sprite: null, enabled: true, size: 36, hp: 32, speed: 180, damage: 8, xp: 10, attackType: 'melee' },
-    boss: { name: names.boss, sprite: null, enabled: true, size: 118, hp: 1500, speed: 120, damage: 13, attackType: 'pump' },
+    boss: { name: names.boss, sprite: null, enabled: true, size: 118, hp: 1500, speed: 120, damage: 13, endlessXp: 500, attackType: 'pump' },
     enemy5: { name: names.enemy5, sprite: null, enabled: true, size: 96, hp: 650, speed: 90, damage: 30, xp: 150, fireInterval: 3 },
     ball: { sprite: null, size: 92, speed: 260, damage: 35 },
     jet: { name: names.jet, sprite: null, enabled: true, size: 120, hp: 260, speed: 430, xp: 100, fireInterval: 1.4 },
     missile: { sprite: null, size: 46, speed: 300, damage: 40 },
+    rocketeer: { name: names.rocketeer, sprite: null, enabled: true, size: 54, hp: 140, xp: 60, fireInterval: 3.2 },
+    rocket: { sprite: null, size: 42, speed: 260, damage: 28 },
   };
+  const result = {};
+  for (const role of mapRoles(map)) {
+    result[role] = SOUND_SLOTS[role] ? { ...characters[role], sounds: {} } : characters[role];
+  }
+  return result;
 }
 
 /** The settings one game runs with: the shared rules plus that map's characters. */
 export function mapConfig(config, mapId) {
   const map = config.maps[mapId];
-  return { site: config.site, gameplay: config.gameplay, mapId, name: map.name, characters: map.characters };
+  return { site: config.site, gameplay: config.gameplay, mapId, name: map.name, characters: map.characters, signs: map.signs ?? [] };
 }
 
 export function defaultConfig() {
@@ -169,7 +225,11 @@ export function defaultConfig() {
         accent2: '#ffb347',
       },
     },
-    maps: Object.fromEntries(MAPS.map((map) => [map, { name: NAMES[map].map, characters: defaultCharacters(map) }])),
+    maps: Object.fromEntries(MAPS.map((map) => [map, {
+      name: NAMES[map].map,
+      characters: defaultCharacters(map),
+      ...(hasSigns(map) ? { signs: [...DEFAULT_SIGNS] } : {}),
+    }])),
     gameplay: {
       hostageDistance: 5200,
       companionKills: 8,
@@ -180,6 +240,7 @@ export function defaultConfig() {
       enemy1Chance: 0.14,
       enemy5Chance: 0.04,
       jetChance: 0.015,
+      bossChance: 0.005,
       difficultyKills: 25,
       difficultyIncrease: 10,
       maxEnemies: 36,
@@ -239,12 +300,28 @@ function readNumber(value, path, spec, errors) {
   return value;
 }
 
-function readCharacters(input, path, errors) {
+function readSigns(input, path, errors) {
+  if (!Array.isArray(input)) {
+    errors.push(`${path}: must be a list`);
+    return [];
+  }
+  if (input.length > MAX_SIGNS) errors.push(`${path}: at most ${MAX_SIGNS} signs`);
+  return input.map((text, index) => readText(text, `${path}.${index}`, MAX_SIGN_LENGTH, true, errors));
+}
+
+/** The attack types an admin may pick for this role. */
+export const attackOptions = (role) => {
+  const spec = CHARACTER_FIELDS.attackType;
+  return spec.options.filter((option) => !spec.notFor[role]?.includes(option));
+};
+
+function readCharacters(input, mapId, path, errors) {
+  const roles = mapRoles(mapId);
   const characters = isObject(input) ? input : {};
   if (!isObject(input)) errors.push(`${path}: is required`);
-  checkKeys(characters, ROLES, path, errors);
+  checkKeys(characters, roles, path, errors);
   const out = {};
-  for (const role of ROLES) {
+  for (const role of roles) {
     const where = `${path}.${role}`;
     const ch = isObject(characters[role]) ? characters[role] : {};
     if (!isObject(characters[role])) errors.push(`${where}: is required`);
@@ -257,7 +334,7 @@ function readCharacters(input, path, errors) {
         if (typeof ch[field] !== 'boolean') errors.push(`${where}.${field}: must be on or off`);
         clean[field] = ch[field];
       } else if (spec.options) {
-        if (!spec.options.includes(ch[field])) errors.push(`${where}.${field}: invalid choice`);
+        if (!attackOptions(role).includes(ch[field])) errors.push(`${where}.${field}: invalid choice`);
         clean[field] = ch[field];
       } else {
         clean[field] = readNumber(ch[field], `${where}.${field}`, spec, errors);
@@ -333,11 +410,12 @@ export function validateConfig(input) {
     const path = `maps.${mapId}`;
     const map = isObject(maps[mapId]) ? maps[mapId] : {};
     if (!isObject(maps[mapId])) errors.push(`${path}: is required`);
-    checkKeys(map, ['name', 'characters'], path, errors);
+    checkKeys(map, ['name', 'characters', ...(hasSigns(mapId) ? ['signs'] : [])], path, errors);
     value.maps[mapId] = {
       name: readText(map.name, `${path}.name`, MAX_MAP_NAME_LENGTH, true, errors),
-      characters: readCharacters(map.characters, `${path}.characters`, errors),
+      characters: readCharacters(map.characters, mapId, `${path}.characters`, errors),
     };
+    if (hasSigns(mapId)) value.maps[mapId].signs = readSigns(map.signs, `${path}.signs`, errors);
   }
 
   const gameplay = isObject(input.gameplay) ? input.gameplay : {};

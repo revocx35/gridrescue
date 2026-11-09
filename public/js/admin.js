@@ -1,10 +1,11 @@
 // Admin editor. All values are placed with textContent/value, never as HTML.
+import { SoundConversionError, prepareSound } from './audio-convert.js';
 import { ImageConversionError, imageToPng } from './image-convert.js';
 import { formatRunTime } from './leaderboard.js';
 import { defaultSprite } from './render.js';
 import {
-  CHARACTER_FIELDS, GAMEPLAY_FIELDS, MAPS, MAX_MAP_NAME_LENGTH, MAX_NAME_LENGTH, NAMED_ROLES, ORDER_FIELDS, ORDER_LABELS, ROLES, ROLE_FIELDS, ROLE_LABELS,
-  SITE_CHOICE_FIELDS, SITE_COLOR_FIELDS, SITE_NUMBER_FIELDS, SITE_TEXT_FIELDS,
+  CHARACTER_FIELDS, GAMEPLAY_FIELDS, MAPS, MAX_MAP_NAME_LENGTH, MAX_NAME_LENGTH, MAX_SIGNS, MAX_SIGN_LENGTH, NAMED_ROLES, ORDER_FIELDS, ORDER_LABELS, ROLE_FIELDS, ROLE_LABELS,
+  SITE_CHOICE_FIELDS, SITE_COLOR_FIELDS, SITE_NUMBER_FIELDS, SITE_TEXT_FIELDS, SOUND_LABELS, SOUND_SLOTS, attackOptions, hasSigns, mapRoles,
 } from './schema.js';
 
 const $ = (id) => document.getElementById(id);
@@ -25,6 +26,7 @@ let csrf = '';
 let revision = 0;
 let draft = null;
 let sprites = {};
+let sounds = {};
 let currentMap = MAPS[0];
 let dirty = false;
 let previewMode = 'desktop';
@@ -46,13 +48,20 @@ function markDirty() {
 function adoptServerState(data, { keepDraft = false } = {}) {
   csrf = data.csrf;
   revision = data.revision;
-  sprites = Object.fromEntries(MAPS.map((mapId) => [
+  const perRole = (read) => Object.fromEntries(MAPS.map((mapId) => [
     mapId,
-    Object.fromEntries(ROLES.map((role) => [role, data.config.maps[mapId].characters[role].sprite])),
+    Object.fromEntries(mapRoles(mapId).map((role) => [role, read(data.config.maps[mapId].characters[role])])),
   ]));
+  sprites = perRole((ch) => ch.sprite);
+  sounds = perRole((ch) => ch.sounds ?? {});
   if (keepDraft) return;
   draft = structuredClone(data.config);
-  for (const mapId of MAPS) for (const role of ROLES) delete draft.maps[mapId].characters[role].sprite;
+  for (const mapId of MAPS) {
+    for (const role of mapRoles(mapId)) {
+      delete draft.maps[mapId].characters[role].sprite;
+      delete draft.maps[mapId].characters[role].sounds;
+    }
+  }
   dirty = false;
   $('save').disabled = true;
   $('brand-title').textContent = draft.site.title;
@@ -77,10 +86,11 @@ async function api(method, url, body, contentType = 'application/json') {
 }
 
 function explain(error) {
-  if (error instanceof ImageConversionError) return error.message;
+  if (error instanceof ImageConversionError || error instanceof SoundConversionError) return error.message;
   if (error.status === 401) return 'Your session has expired. Open this page in a new tab and sign in, then save again.';
   if (error.status === 409) return 'Someone else changed the settings. Reload the page to get the latest version.';
-  if (error.status === 413) return 'That image is too large.';
+  if (error.status === 413) return 'That file is too large to upload.';
+  if (error.status === 422 && error.message === 'invalid_audio') return 'The server could not accept that sound. Try a different file.';
   if (error.status === 422 && error.message === 'invalid_png') return 'The server could not accept that image. Try a different file.';
   if (error.status === 422) return `Please fix: ${(error.details ?? []).join('; ')}`;
   if (error.status === 429) return 'Too many changes in a short time. Wait a minute and try again.';
@@ -95,10 +105,10 @@ function numberField(spec, value, onChange) {
   return el('label', { class: 'field' }, el('span', { class: 'micro', textContent: spec.label }), input);
 }
 
-function choiceField(spec, value, onChange) {
+function choiceField(spec, value, onChange, options = spec.options) {
   const select = el(
     'select', { on: { change: (e) => onChange(e.target.value) } },
-    ...spec.options.map((option) => el('option', {
+    ...options.map((option) => el('option', {
       value: option,
       textContent: spec.optionLabels?.[option] ?? option[0].toUpperCase() + option.slice(1),
     })),
@@ -164,6 +174,78 @@ async function removeSprite(mapId, role) {
   }
 }
 
+let previewContext = null;
+let previewSource = null;
+
+/** The page's CSP has no media source, so previews go through fetch and Web Audio, like the game. */
+async function previewSound(file) {
+  previewContext ??= new (window.AudioContext ?? window.webkitAudioContext)();
+  await previewContext.resume();
+  previewSource?.stop();
+  try {
+    const bytes = await fetch(`/sounds/${file}`).then((response) => response.arrayBuffer());
+    previewSource = previewContext.createBufferSource();
+    previewSource.buffer = await previewContext.decodeAudioData(bytes);
+    previewSource.connect(previewContext.destination);
+    previewSource.start();
+  } catch {
+    setStatus('That sound could not be played on this device.', 'error');
+  }
+}
+
+async function uploadSound(mapId, role, slot, file) {
+  setStatus(`Preparing ${file.name}…`);
+  try {
+    const { body, type } = await prepareSound(file);
+    setStatus(`Uploading ${file.name}…`);
+    adoptServerState(await api('PUT', `/api/admin/sounds/${mapId}/${role}/${slot}`, body, type), { keepDraft: true });
+    renderCharacters();
+    setStatus(`Sound updated for ${roleTitle(mapId, role)}.${dirty ? ' You still have unsaved changes.' : ''}`, 'good');
+  } catch (error) {
+    setStatus(explain(error), 'error');
+  }
+}
+
+async function removeSound(mapId, role, slot) {
+  try {
+    adoptServerState(await api('DELETE', `/api/admin/sounds/${mapId}/${role}/${slot}`), { keepDraft: true });
+    renderCharacters();
+    setStatus(`Sound removed from ${roleTitle(mapId, role)}.${dirty ? ' You still have unsaved changes.' : ''}`, 'good');
+  } catch (error) {
+    setStatus(explain(error), 'error');
+  }
+}
+
+function soundRow(mapId, role, slot) {
+  const file = sounds[mapId][role][slot];
+  const input = el('input', {
+    // No `accept` filter, for the same reason as sprites: phones would hide their file browser.
+    type: 'file', class: 'visually-hidden',
+    on: { change: (e) => { if (e.target.files[0]) uploadSound(mapId, role, slot, e.target.files[0]); e.target.value = ''; } },
+  });
+  input.setAttribute('aria-label', `Upload ${SOUND_LABELS[slot]} for ${ROLE_LABELS[role]}`);
+  const row = el(
+    'div', { class: 'sound-row' },
+    el('span', { class: 'sound-name', textContent: SOUND_LABELS[slot] }),
+    el('span', { class: 'micro sprite-state', textContent: file ? 'Your sound' : 'Silent' }),
+    el('button', { class: 'btn', type: 'button', textContent: 'Upload', on: { click: () => input.click() } }),
+    input,
+  );
+  if (file) {
+    row.append(
+      el('button', { class: 'btn', type: 'button', textContent: 'Play', on: { click: () => previewSound(file) } }),
+      el('button', { class: 'btn', type: 'button', textContent: 'Remove', on: { click: () => removeSound(mapId, role, slot) } }),
+    );
+  }
+  return row;
+}
+
+function soundSection(mapId, role) {
+  const slots = SOUND_SLOTS[role];
+  if (!slots) return [];
+  return [el('div', { class: 'sound-list' }, el('span', { class: 'micro', textContent: 'Sound effects' }), ...slots.map((slot) => soundRow(mapId, role, slot)))];
+}
+
 function characterCard(role) {
   const mapId = currentMap;
   const ch = currentCharacters()[role];
@@ -193,7 +275,7 @@ function characterCard(role) {
       markDirty();
     };
     if (spec.boolean) stats.append(toggleField(spec, ch[field], update));
-    else stats.append(spec.options ? choiceField(spec, ch[field], update) : numberField(spec, ch[field], update));
+    else stats.append(spec.options ? choiceField(spec, ch[field], update, attackOptions(role)) : numberField(spec, ch[field], update));
   }
   const card = el(
     'article', { class: `panel char-card${ch.enabled === false ? ' char-off' : ''}` },
@@ -203,6 +285,7 @@ function characterCard(role) {
       el('p', { class: 'micro char-role', textContent: ROLE_LABELS[role] }),
       ...(NAMED_ROLES.includes(role) ? [textField('Name', MAX_NAME_LENGTH, ch.name, (value) => { ch.name = value; markDirty(); })] : []),
       stats,
+      ...soundSection(mapId, role),
     ),
   );
   return card;
@@ -219,7 +302,7 @@ function mapBar() {
   });
   const active = buttons[MAPS.indexOf(currentMap)];
   const map = draft.maps[currentMap];
-  return el(
+  const bar = el(
     'div', { class: 'panel map-bar' },
     el('div', { class: 'map-switch' }, el('span', { class: 'micro', textContent: 'Editing map' }), el('div', { class: 'map-switch-buttons' }, ...buttons)),
     textField('Map name', MAX_MAP_NAME_LENGTH, map.name, (value) => {
@@ -228,10 +311,24 @@ function mapBar() {
       markDirty();
     }),
   );
+  if (hasSigns(currentMap)) bar.append(signsField(map));
+  return bar;
+}
+
+function signsField(map) {
+  const input = el('textarea', {
+    class: 'signs-input', rows: 5, value: map.signs.join('\n'),
+    on: { input: (e) => { map.signs = e.target.value.split('\n').map((line) => line.trim()).filter(Boolean); markDirty(); } },
+  });
+  return el(
+    'label', { class: 'field block-wide' },
+    el('span', { class: 'micro', textContent: `Sign texts, one per line (up to ${MAX_SIGNS} signs, ${MAX_SIGN_LENGTH} characters each)` }),
+    input,
+  );
 }
 
 function renderCharacters() {
-  $('tab-characters').replaceChildren(mapBar(), el('div', { class: 'grid-cards' }, ...ROLES.map(characterCard)));
+  $('tab-characters').replaceChildren(mapBar(), el('div', { class: 'grid-cards' }, ...mapRoles(currentMap).map(characterCard)));
 }
 
 // ---- site menu ----
@@ -375,7 +472,7 @@ function renderScores(data) {
     const rows = entries.map((entry) => el(
       'li', { class: 'score-row' },
       el('span', { class: 'score-name', textContent: entry.name }),
-      el('span', { class: 'score-stat', textContent: `${formatRunTime(entry.time)}${entry.won === false ? ' (died)' : ''}` }),
+      el('span', { class: 'score-stat', textContent: `${formatRunTime(entry.time)}${entry.mode === 'endless' ? ' (endless)' : entry.won === false ? ' (died)' : ''}` }),
       el('span', { class: 'score-stat', textContent: `${entry.kills} kills` }),
       el('button', { class: 'btn', type: 'button', textContent: 'Delete', on: { click: () => deleteScore(mapId, entry) } }),
     ));
@@ -444,7 +541,7 @@ async function save() {
 }
 
 async function reset() {
-  if (!confirm('Restore every name, sprite, colour and rule to its default? Uploaded sprites will be deleted.')) return;
+  if (!confirm('Restore every name, sprite, sound, colour and rule to its default? Uploaded sprites and sounds will be deleted.')) return;
   try {
     adoptServerState(await api('POST', '/api/admin/config/reset', {}));
     setStatus('Defaults restored.', 'good');
