@@ -1,5 +1,5 @@
 // Game rules, with no DOM access: the browser renders this state and tests run it headlessly.
-import { BUS_CHANCE, CHUNK_SIZE, createForest, createWasteland, forEachItemIn, hitsSolid, pushOutOfSolids } from './scenery.js';
+import { CHUNK_SIZE, createForest, createWasteland, forEachItemIn, hitsSolid, pushOutOfSolids } from './scenery.js';
 
 const TAU = Math.PI * 2;
 const DEG = Math.PI / 180;
@@ -28,7 +28,7 @@ const FASTEST_SPAWN_FACTOR = 0.42;
 const RESCUE_GAP = 24;
 const KILL_HEAL = { enemy1: 12, enemy2: 3, enemy5: 30, jet: 20, boss: 40, rocketeer: 10 };
 const ENDLESS_BOSS_EARLIEST = 60;
-const WASTELAND_START_CLEARING = 760; // no Rocketeer gets a shot in before the player has moved
+const START_CLEARING = 260;
 const BUS_SCAN_MARGIN = 240;
 const ROCKET_PRIORITY = 0.6; // auto-aim counts a rocket as this much closer, so it is shot down in a crowd
 // The widest strip of world any screen can show, used to bound how many buses a run can pass.
@@ -64,16 +64,16 @@ export function scoreLimits(cfg) {
 /** Rocketeers come on top of the spawn pacing: this bounds how many buses a player can run past per second. */
 function busKillRate(cfg) {
   if (cfg.mapId !== 'wasteland' || !cfg.characters.rocketeer.enabled) return 0;
-  return (cfg.characters.player.speed * WIDEST_VIEW * BUS_CHANCE) / CHUNK_SIZE ** 2;
+  return (cfg.characters.player.speed * WIDEST_VIEW * cfg.gameplay.busChance) / CHUNK_SIZE ** 2;
 }
 
 /** The arena and the start stay open so a fight is never decided by where an obstacle landed. */
 function createWorld(cfg, rng, hostage, arena) {
   if (cfg.mapId !== 'forest' && cfg.mapId !== 'wasteland') return null;
-  const forest = cfg.mapId === 'forest';
-  const clearings = [{ x: 0, y: 0, r: forest ? 260 : WASTELAND_START_CLEARING }];
+  const clearings = [{ x: 0, y: 0, r: START_CLEARING }];
   if (hostage) clearings.push({ x: hostage.x, y: hostage.y, r: arena + 60 });
-  return (forest ? createForest : createWasteland)(Math.floor(rng() * 2 ** 31), clearings);
+  const seed = Math.floor(rng() * 2 ** 31);
+  return cfg.mapId === 'forest' ? createForest(seed, clearings) : createWasteland(seed, clearings, cfg.gameplay.busChance);
 }
 
 /** view is the half-size of the visible world, kept current by the renderer. mode is 'rescue' or 'endless'. */

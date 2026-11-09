@@ -29,7 +29,7 @@ describe('config validation', () => {
   rejects('a bad colour', (c) => { c.site.colors.accent = 'url(evil)'; });
   rejects('an out of range number', (c) => { c.maps.grid.characters.boss.hp = -1; });
   rejects('a non-number', (c) => { c.gameplay.hintSeconds = '2'; });
-  rejects('a null number', (c) => { c.gameplay.maxEnemies = null; });
+  rejects('a null number', (c) => { c.gameplay.xpToUpgrade = null; });
   rejects('a repeated section', (c) => { c.site.mobileOrder = ['game', 'game', 'joystick']; });
   rejects('a missing section', (c) => { c.site.desktopOrder = ['game']; });
   rejects('an unknown key', (c) => { c.site.script = 'x'; });
@@ -293,7 +293,7 @@ describe('config upgrades', () => {
     assert.equal(enemy5.fireInterval, 3);
     assert.equal(enemy5.enabled, true);
     assert.equal(ball.sprite, null);
-    assert.equal(config.gameplay.enemy5Chance, defaultConfig().gameplay.enemy5Chance);
+    assert.equal(config.maps.grid.spawns.enemy5Chance, defaultConfig().maps.grid.spawns.enemy5Chance);
   });
 
   it('gives the new map its own default cast, without the old images', async () => {

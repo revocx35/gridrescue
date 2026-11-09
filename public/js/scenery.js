@@ -14,12 +14,29 @@ const TANK_CHANCES = [0.62, 0.28];
 const FOREST_SCALE = 900;
 const TREE_CHANCE_IN_FOREST = 0.82;
 const TREE_CHANCE_IN_OPEN = 0.07;
-export const BUS_CHANCE = 0.2;
+const BUS_START_CLEARING = 760; // no Rocketeer gets a shot in before the player has moved
 const BUS_MARGIN = 130; // keeps a whole bus inside its chunk, whichever way it points
 const BUS_PART_RADIUS = 36;
 const BUS_PART_OFFSETS = [-66, 0, 66];
+const BUS_REACH = 102;
 const SIGN_CHANCES = [0.5, 0.2];
 const SIGN_BUS_GAP = 170;
+const SIGN_GAP = 200;
+const SIGN_MARGIN = 100; // keeps the whole sign inside its chunk
+const SIGN_REACH = 80;
+const SIGN_PART_RADIUS = 20;
+export const SIGN_POST_OFFSET = 60; // the two posts; the board spans them and the fence of circles joins them
+const SIGN_PART_OFFSETS = [-SIGN_POST_OFFSET, -20, 20, SIGN_POST_OFFSET];
+// Hills sit near the middle of a chunk, so two neighbouring hills always leave a way between them.
+const HILL_MARGIN = 180;
+const HILL_MIN_RADIUS = 60;
+const HILL_RADIUS_RANGE = 45;
+const HILL_LOBE_SPACING = 60;
+const HILL_REACH = 165;
+const HILL_MAX_LOBES = 3;
+const HILL_RANGE_LEVEL = 0.58; // above this the slow noise makes a range of hills
+const HILL_CHANCE_IN_RANGE = 0.6;
+const HILL_CHANCE_ELSEWHERE = 0.05;
 const MAX_CACHED_CHUNKS = 400;
 const KEY_SHIFT = 2 ** 21;
 
@@ -52,25 +69,49 @@ export function createForest(seed, clearings) {
   return { kind: 'forest', seed, clearings, chunks: new Map() };
 }
 
-/** Buses block walking but shots fly over them, or nothing could reach the Rocketeer on the roof. */
-export function createWasteland(seed, clearings) {
-  return { kind: 'wasteland', seed, clearings, chunks: new Map() };
+/** Buses and signs block walking but shots fly over them, or nothing could reach the Rocketeer on the roof. Hills stop both. */
+export function createWasteland(seed, clearings, busChance) {
+  return { kind: 'wasteland', seed, clearings, busChance, chunks: new Map() };
+}
+
+function wastelandHill(world, roll, left, top) {
+  const { seed, clearings } = world;
+  const level = forestAmount(seed, left + CHUNK_SIZE / 2, top + CHUNK_SIZE / 2);
+  if (roll(40) >= (level > HILL_RANGE_LEVEL ? HILL_CHANCE_IN_RANGE : HILL_CHANCE_ELSEWHERE)) return null;
+  const span = CHUNK_SIZE - HILL_MARGIN * 2;
+  const x = left + HILL_MARGIN + roll(41) * span;
+  const y = top + HILL_MARGIN + roll(42) * span;
+  if (clearings.some((c) => Math.hypot(x - c.x, y - c.y) < c.r + HILL_REACH)) return null;
+  const angle = roll(43) * Math.PI;
+  const count = 1 + Math.floor(roll(44) * HILL_MAX_LOBES);
+  const lobes = Array.from({ length: count }, (_, i) => {
+    const offset = (i - (count - 1) / 2) * HILL_LOBE_SPACING;
+    return { x: x + Math.cos(angle) * offset, y: y + Math.sin(angle) * offset, r: HILL_MIN_RADIUS + roll(45 + i) * HILL_RADIUS_RANGE };
+  });
+  return { kind: 'hill', x, y, lobes, variant: roll(49) };
 }
 
 function buildWastelandChunk(world, cx, cy) {
-  const { seed, clearings } = world;
+  const { seed, clearings, busChance } = world;
   const left = cx * CHUNK_SIZE;
   const top = cy * CHUNK_SIZE;
   const roll = (salt) => hash(seed, cx, cy, salt);
   const items = [];
   const circles = [];
+  const hill = wastelandHill(world, roll, left, top);
+  if (hill) {
+    items.push(hill);
+    circles.push(...hill.lobes);
+  }
+  const isFree = (x, y, reach) => !clearings.some((c) => Math.hypot(x - c.x, y - c.y) < c.r + reach)
+    && !hill?.lobes.some((lobe) => Math.hypot(x - lobe.x, y - lobe.y) < lobe.r + reach);
+
   let bus = null;
-  if (roll(1) < BUS_CHANCE) {
+  if (roll(1) < busChance) {
     const span = CHUNK_SIZE - BUS_MARGIN * 2;
     const x = left + BUS_MARGIN + roll(2) * span;
     const y = top + BUS_MARGIN + roll(3) * span;
-    const reach = BUS_PART_OFFSETS.at(-1) + BUS_PART_RADIUS;
-    if (!clearings.some((c) => Math.hypot(x - c.x, y - c.y) < c.r + reach)) {
+    if (Math.hypot(x, y) >= BUS_START_CLEARING + BUS_REACH && isFree(x, y, BUS_REACH)) {
       const angle = roll(4) * Math.PI;
       bus = { kind: 'bus', id: `${cx}:${cy}`, x, y, angle, variant: roll(5) };
       items.push(bus);
@@ -79,14 +120,21 @@ function buildWastelandChunk(world, cx, cy) {
       }
     }
   }
+
+  const signs = [];
   SIGN_CHANCES.forEach((chance, i) => {
     if (roll(10 + i * 10) >= chance) return;
-    const x = left + TANK_MARGIN + roll(11 + i * 10) * (CHUNK_SIZE - TANK_MARGIN * 2);
-    const y = top + TANK_MARGIN + roll(12 + i * 10) * (CHUNK_SIZE - TANK_MARGIN * 2);
-    if (bus && Math.hypot(x - bus.x, y - bus.y) < SIGN_BUS_GAP) return;
-    items.push({ kind: 'sign', x, y, variant: roll(13 + i * 10) });
+    const span = CHUNK_SIZE - SIGN_MARGIN * 2;
+    const x = left + SIGN_MARGIN + roll(11 + i * 10) * span;
+    const y = top + SIGN_MARGIN + roll(12 + i * 10) * span;
+    if (!isFree(x, y, SIGN_REACH) || (bus && Math.hypot(x - bus.x, y - bus.y) < SIGN_BUS_GAP)) return;
+    if (signs.some((sign) => Math.hypot(x - sign.x, y - sign.y) < SIGN_GAP)) return;
+    const sign = { kind: 'sign', x, y, variant: roll(13 + i * 10) };
+    signs.push(sign);
+    items.push(sign);
+    for (const offset of SIGN_PART_OFFSETS) circles.push({ x: x + offset, y, r: SIGN_PART_RADIUS });
   });
-  return { items, circles, cover: [] };
+  return { items, circles, cover: hill ? hill.lobes : [] };
 }
 
 function buildChunk(world, cx, cy) {

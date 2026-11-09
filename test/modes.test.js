@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { defaultConfig, mapConfig, mapRoles, validateConfig } from '../public/js/schema.js';
-import { forEachItemIn } from '../public/js/scenery.js';
+import { forEachItemIn, hitsSolid } from '../public/js/scenery.js';
 import { createGame, destroyMissileAt, scoreLimits, step } from '../public/js/sim.js';
 
 const DT = 1 / 60;
@@ -186,6 +186,157 @@ describe('wasteland', () => {
     const grid = mapConfig(defaultConfig(), 'grid');
     assert.ok(scoreLimits(wasteland).minSpawnGap < scoreLimits(grid).minSpawnGap);
   });
+});
+
+describe('wasteland obstacles', () => {
+  const collect = (seed, kind, range = 6000, edit) => {
+    const s = game({ map: 'wasteland', seed, edit });
+    const items = [];
+    forEachItemIn(s.world, -range, -range, range, range, (item) => { if (item.kind === kind) items.push(item); });
+    return { s, items };
+  };
+
+  it('stops a walker at a sign, but not a shot', () => {
+    const { s, items } = collect(3, 'sign');
+    const sign = items.find((item) => Math.hypot(item.x, item.y) > 600);
+    s.player.x = sign.x;
+    s.player.y = sign.y - 40;
+    s.player.cool = 9999;
+    for (let i = 0; i < 30; i++) step(s, DT, { x: 0, y: 1 });
+    assert.ok(s.player.y < sign.y, 'walked through the board');
+    assert.equal(hitsSolid(s.world, sign.x, sign.y), false);
+  });
+
+  it('blocks the whole width of a sign, not only its posts', () => {
+    const { s, items } = collect(3, 'sign');
+    const sign = items.find((item) => Math.hypot(item.x, item.y) > 600);
+    for (const offset of [-40, -20, 0, 20, 40]) {
+      s.player.x = sign.x + offset;
+      s.player.y = sign.y - 34;
+      s.player.cool = 9999;
+      for (let i = 0; i < 20; i++) step(s, DT, { x: 0, y: 1 });
+      assert.ok(s.player.y < sign.y, `passed at offset ${offset}`);
+    }
+  });
+
+  it('stops walkers and shots at a hill', () => {
+    const { s, items } = collect(3, 'hill');
+    const lobe = items[0].lobes[0];
+    assert.equal(hitsSolid(s.world, lobe.x, lobe.y), true);
+    s.player.x = lobe.x;
+    s.player.y = lobe.y - lobe.r - 40;
+    s.player.cool = 9999;
+    for (let i = 0; i < 40; i++) step(s, DT, { x: 0, y: 1 });
+    assert.ok(Math.hypot(s.player.x - lobe.x, s.player.y - lobe.y) >= lobe.r);
+  });
+
+  it('has hills that shape the map without filling it', () => {
+    for (const seed of [1, 2, 3, 4, 5]) {
+      const { items } = collect(seed, 'hill', 4800);
+      const share = items.length / 400; // the range covers 20 by 20 chunks
+      assert.ok(share > 0.05 && share < 0.4, `seed ${seed}: ${share}`);
+    }
+  });
+
+  it('builds hills from one to three lobes', () => {
+    const { items } = collect(2, 'hill');
+    assert.ok(items.every((hill) => hill.lobes.length >= 1 && hill.lobes.length <= 3));
+    assert.ok(new Set(items.map((hill) => hill.lobes.length)).size > 1);
+  });
+
+  it('keeps every obstacle clear of the start and the boss arena', () => {
+    for (const seed of [1, 2, 3, 4]) {
+      const s = game({ map: 'wasteland', seed });
+      const arena = s.cfg.gameplay.arenaRadius;
+      forEachItemIn(s.world, -9000, -9000, 9000, 9000, (item) => {
+        for (const part of item.lobes ?? [item]) {
+          const r = part.r ?? 80;
+          assert.ok(Math.hypot(part.x, part.y) >= 260 + r - 1, `${item.kind} at the start`);
+          assert.ok(Math.hypot(part.x - s.hostage.x, part.y - s.hostage.y) >= arena + 60 + r - 1, `${item.kind} in the arena`);
+        }
+      });
+    }
+  });
+
+  it('does not put a bus or a sign inside a hill', () => {
+    const s = game({ map: 'wasteland', seed: 6 });
+    const all = [];
+    forEachItemIn(s.world, -9000, -9000, 9000, 9000, (item) => all.push(item));
+    const hills = all.filter((item) => item.kind === 'hill');
+    for (const item of all.filter((other) => other.kind !== 'hill')) {
+      for (const lobe of hills.flatMap((hill) => hill.lobes)) assert.ok(Math.hypot(item.x - lobe.x, item.y - lobe.y) > lobe.r);
+    }
+  });
+
+  it('always leaves room between neighbouring hills', () => {
+    for (const seed of [1, 2, 3]) {
+      const hills = collect(seed, 'hill', 9000).items;
+      assert.ok(hills.length);
+      for (const a of hills) {
+        for (const b of hills) {
+          if (a === b || Math.hypot(a.x - b.x, a.y - b.y) > 700) continue;
+          for (const la of a.lobes) for (const lb of b.lobes) assert.ok(Math.hypot(la.x - lb.x, la.y - lb.y) - la.r - lb.r >= 28);
+        }
+      }
+    }
+  });
+
+  it('follows the bus chance', () => {
+    const edit = (value) => (c) => { c.gameplay.busChance = value; };
+    assert.equal(collect(1, 'bus', 6000, edit(0)).items.length, 0);
+    assert.ok(collect(1, 'bus', 6000, edit(0.9)).items.length > collect(1, 'bus', 6000, edit(0.1)).items.length);
+  });
+});
+
+describe('spawn rates per map', () => {
+  const editable = () => {
+    const config = defaultConfig();
+    for (const map of Object.values(config.maps)) for (const ch of Object.values(map.characters)) { delete ch.sprite; delete ch.sounds; }
+    return config;
+  };
+  const rejected = (name, mutate) => it(`rejects ${name}`, () => {
+    const config = editable();
+    mutate(config);
+    assert.equal(validateConfig(config).ok, false);
+  });
+
+  it('accepts a different rate on each map', () => {
+    const config = editable();
+    config.maps.grid.spawns.spawnInterval = 0.2;
+    config.maps.forest.spawns.spawnInterval = 5;
+    const { value } = validateConfig(config);
+    assert.equal(mapConfig(value, 'grid').gameplay.spawnInterval, 0.2);
+    assert.equal(mapConfig(value, 'forest').gameplay.spawnInterval, 5);
+  });
+
+  it('keeps the shared rules alongside', () => {
+    assert.equal(mapConfig(defaultConfig(), 'grid').gameplay.hintSeconds, defaultConfig().gameplay.hintSeconds);
+  });
+
+  it('does not write spawn changes back to the shared config', () => {
+    const config = defaultConfig();
+    mapConfig(config, 'grid').gameplay.spawnInterval = 9;
+    assert.notEqual(config.maps.grid.spawns.spawnInterval, 9);
+  });
+
+  it('really changes the pace of a game', () => {
+    const count = (interval) => {
+      const cfg = mapConfig(defaultConfig(), 'grid');
+      cfg.gameplay.spawnInterval = interval;
+      cfg.characters.player.damage = 0;
+      const s = createGame(cfg, { rng: seeded(8) });
+      for (let i = 0; i < 60 * 12; i++) { s.player.hp = s.player.maxHp; step(s, DT, still); }
+      return s.enemies.length;
+    };
+    assert.ok(count(0.4) > count(4));
+  });
+
+  rejected('a chance over 1', (c) => { c.maps.forest.spawns.jetChance = 1.5; });
+  rejected('a negative chance', (c) => { c.maps.grid.spawns.enemy1Chance = -0.1; });
+  rejected('a zero spawn interval', (c) => { c.maps.grid.spawns.spawnInterval = 0; });
+  rejected('a missing spawn panel', (c) => { delete c.maps.grid.spawns; });
+  rejected('a bus chance on a map without buses', (c) => { c.maps.grid.spawns.busChance = 0.5; });
+  rejected('spawn settings in the old shared place', (c) => { c.gameplay.spawnInterval = 1; });
 });
 
 describe('rocket interception', () => {

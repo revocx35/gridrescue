@@ -1,11 +1,14 @@
 // Draws the simulation state on a canvas. Holds no game rules.
-import { forEachItemIn } from './scenery.js';
+import { SIGN_POST_OFFSET, forEachItemIn } from './scenery.js';
 import { CELL_SIZE } from './sim.js';
 
 const ART_SIZE = 256;
 const TAU = Math.PI * 2;
 const SIGN_WIDTH = 150;
+const SIGN_BOARD_WIDTH = 176;
 const SIGN_LINE = 17;
+const SIGN_FONT = 14;
+const HILL_ART_OVERHANG = 1.14; // heaps look ragged, so the art runs a little past the solid edge
 
 function tile(ctx, x, y, w, h, r) {
   ctx.beginPath();
@@ -311,6 +314,48 @@ function busStamp([body, roof]) {
   });
 }
 
+/** A heap of rubbish from above. Seeded, so a variant looks the same every time. */
+function heapStamp(seed, [base, mid, light]) {
+  return stamp(260, (c) => {
+    let state = seed;
+    const next = () => {
+      state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
+      return state / 4294967296;
+    };
+    const blob = (radius, jag) => {
+      const points = [];
+      for (let i = 0; i < 18; i++) {
+        const a = (i / 18) * TAU;
+        const r = radius * (1 - jag + next() * jag * 2);
+        points.push([Math.cos(a) * r, Math.sin(a) * r]);
+      }
+      poly(c, points);
+    };
+    c.fillStyle = 'rgba(60,70,80,0.26)'; disc(c, 7, 11, 118);
+    c.fillStyle = base; blob(112, 0.12);
+    c.fillStyle = mid; blob(84, 0.16);
+    c.fillStyle = light; blob(46, 0.22);
+    for (let i = 0; i < 26; i++) {
+      const a = next() * TAU;
+      const d = 14 + next() * 88;
+      const x = Math.cos(a) * d;
+      const y = Math.sin(a) * d;
+      const kind = next();
+      if (kind < 0.3) { // bin bags
+        c.fillStyle = next() < 0.5 ? '#2a2e33' : '#3a4a3a'; disc(c, x, y, 8 + next() * 8);
+      } else if (kind < 0.5) { // tyres
+        c.strokeStyle = '#1c2228'; c.lineWidth = 5; c.beginPath(); c.arc(x, y, 9 + next() * 4, 0, TAU); c.stroke();
+      } else if (kind < 0.8) { // crates and boxes
+        c.save(); c.translate(x, y); c.rotate(next() * TAU);
+        c.fillStyle = ['#8a6a3c', '#a68a5a', '#6e7a84'][Math.floor(next() * 3)]; tile(c, -9, -7, 18, 14, 2);
+        c.restore();
+      } else { // cans and scrap
+        c.fillStyle = ['#b5512a', '#c9a227', '#5b7083'][Math.floor(next() * 3)]; tile(c, x - 3, y - 6, 6, 12, 2);
+      }
+    }
+  });
+}
+
 let sceneryStamps = null;
 
 function getSceneryStamps() {
@@ -318,6 +363,8 @@ function getSceneryStamps() {
     tree: [['#1a3a1e', '#27562a', '#3a7337'], ['#1c3320', '#2e5a2c', '#4a7c35'], ['#2a3a16', '#46611f', '#6b8430']].map(treeStamp),
     tank: [['#4a5236', '#333a26'], ['#3b3d33', '#292b24']].map(tankStamp),
     bus: [['#c9a227', '#a8861c'], ['#a23c2c', '#823024'], ['#5b7083', '#465767']].map(busStamp),
+    hill: [['#6b6256', '#857a69', '#a39683'], ['#5e5a55', '#7a756c', '#979187'], ['#70604e', '#8c7a62', '#a8977e']]
+      .map((colors, i) => heapStamp(7919 * (i + 1), colors)),
   };
   return sceneryStamps;
 }
@@ -552,6 +599,10 @@ export class Renderer {
         return;
       }
       const set = stamps[item.kind];
+      if (item.kind === 'hill') {
+        this.#drawHill(ctx, item, set);
+        return;
+      }
       const art = set[Math.floor(item.variant * set.length)];
       ctx.save();
       ctx.translate(item.x, item.y);
@@ -592,29 +643,43 @@ export class Renderer {
     return lines;
   }
 
+  #drawHill(ctx, item, set) {
+    item.lobes.forEach((lobe, i) => {
+      const art = set[Math.floor((item.variant * 7 + i) % set.length)];
+      const size = lobe.r * 2 * HILL_ART_OVERHANG * (art.size / 232); // 232 is the heap's own width in its stamp
+      ctx.save();
+      ctx.translate(lobe.x, lobe.y);
+      ctx.rotate(item.variant * TAU + i * 2.1);
+      ctx.drawImage(art.canvas, -size / 2, -size / 2, size, size);
+      ctx.restore();
+    });
+  }
+
   #drawSign(ctx, item) {
     const { signs } = this.config;
     if (!signs.length) return;
     const text = signs[Math.floor(item.variant * signs.length)];
     ctx.save();
-    ctx.font = '800 14px ui-sans-serif, system-ui, sans-serif';
+    ctx.font = `800 ${SIGN_FONT}px ui-sans-serif, system-ui, sans-serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     const lines = this.#signLines(ctx, text);
-    const width = Math.max(90, ...lines.map((line) => ctx.measureText(line).width)) + 26;
+    // The solid part of a sign has a fixed width, so an unbroken long word shrinks to fit the board.
+    const shrink = Math.min(1, SIGN_WIDTH / Math.max(...lines.map((line) => ctx.measureText(line).width)));
     const height = lines.length * SIGN_LINE + 18;
     const top = item.y - height - 26;
     ctx.fillStyle = 'rgba(60,70,80,0.28)';
     ctx.beginPath();
-    ctx.ellipse(item.x, item.y + 2, 22, 7, 0, 0, TAU);
+    ctx.ellipse(item.x, item.y + 3, SIGN_POST_OFFSET + 24, 9, 0, 0, TAU);
     ctx.fill();
-    ctx.fillStyle = '#54402c';
-    ctx.fillRect(item.x - 4, item.y - 30, 8, 32);
-    ctx.fillStyle = '#54402c';
-    tile(ctx, item.x - width / 2 - 3, top - 3, width + 6, height + 6, 5);
-    ctx.fillStyle = '#e3d3ac';
-    tile(ctx, item.x - width / 2, top, width, height, 3);
-    ctx.fillStyle = '#2b2118';
+    ctx.fillStyle = '#6e7a84';
+    for (const side of [-1, 1]) ctx.fillRect(item.x + side * SIGN_POST_OFFSET - 4, item.y - 30, 8, 32);
+    ctx.fillStyle = '#0f4d27';
+    tile(ctx, item.x - SIGN_BOARD_WIDTH / 2 - 3, top - 3, SIGN_BOARD_WIDTH + 6, height + 6, 5);
+    ctx.fillStyle = '#1f8a45';
+    tile(ctx, item.x - SIGN_BOARD_WIDTH / 2, top, SIGN_BOARD_WIDTH, height, 3);
+    ctx.font = `800 ${SIGN_FONT * shrink}px ui-sans-serif, system-ui, sans-serif`;
+    ctx.fillStyle = '#f2fff5';
     lines.forEach((line, i) => ctx.fillText(line, item.x, top + 9 + SIGN_LINE * (i + 0.5)));
     ctx.restore();
   }

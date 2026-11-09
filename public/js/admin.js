@@ -5,7 +5,7 @@ import { formatRunTime } from './leaderboard.js';
 import { defaultSprite } from './render.js';
 import {
   CHARACTER_FIELDS, GAMEPLAY_FIELDS, MAPS, MAX_MAP_NAME_LENGTH, MAX_NAME_LENGTH, MAX_SIGNS, MAX_SIGN_LENGTH, NAMED_ROLES, ORDER_FIELDS, ORDER_LABELS, ROLE_FIELDS, ROLE_LABELS,
-  SITE_CHOICE_FIELDS, SITE_COLOR_FIELDS, SITE_NUMBER_FIELDS, SITE_TEXT_FIELDS, SOUND_LABELS, SOUND_SLOTS, attackOptions, hasSigns, mapRoles,
+  SITE_CHOICE_FIELDS, SITE_COLOR_FIELDS, SITE_NUMBER_FIELDS, SITE_TEXT_FIELDS, SOUND_LABELS, SOUND_SLOTS, attackOptions, hasSigns, mapRoles, spawnFields,
 } from './schema.js';
 
 const $ = (id) => document.getElementById(id);
@@ -351,8 +351,22 @@ function signsField(map) {
   );
 }
 
+function spawnPanel() {
+  const { spawns } = draft.maps[currentMap];
+  const grid = el('div', { class: 'block-grid' });
+  for (const [key, spec] of Object.entries(spawnFields(currentMap))) {
+    grid.append(numberField(spec, spawns[key], (value) => { spawns[key] = value; markDirty(); }));
+  }
+  return el(
+    'div', { class: 'panel block spawn-panel' },
+    el('h2', { textContent: `Spawn rates on ${draft.maps[currentMap].name || currentMap}` }),
+    grid,
+    el('p', { class: 'spawn-note', textContent: 'Any chance left over goes to Enemy 2. Spawns get faster during a run, up to about twice this rate.' }),
+  );
+}
+
 function renderCharacters() {
-  $('tab-characters').replaceChildren(mapBar(), el('div', { class: 'grid-cards' }, ...mapRoles(currentMap).map(characterCard)));
+  $('tab-characters').replaceChildren(mapBar(), spawnPanel(), el('div', { class: 'grid-cards' }, ...mapRoles(currentMap).map(characterCard)));
 }
 
 // ---- site menu ----

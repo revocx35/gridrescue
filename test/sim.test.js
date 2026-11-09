@@ -739,11 +739,11 @@ describe('enemy 5', () => {
   }
 
   it('is the strongest and the rarest regular enemy', () => {
-    const { maps, gameplay } = defaultConfig();
+    const { maps } = defaultConfig();
     for (const { characters: c } of Object.values(maps)) {
       assert.ok(c.enemy5.hp > c.enemy1.hp && c.enemy5.damage > c.enemy1.damage);
     }
-    assert.ok(gameplay.enemy5Chance < gameplay.enemy1Chance);
+    assert.ok(maps.grid.spawns.enemy5Chance < maps.grid.spawns.enemy1Chance);
   });
 
   it('spawns with its chance, ready to throw', () => {
@@ -1092,8 +1092,8 @@ describe('Su-34 and Kh-29', () => {
   };
 
   it('is very rare and never in the opening of a run', () => {
-    const { gameplay } = defaultConfig();
-    assert.ok(gameplay.jetChance < gameplay.enemy5Chance);
+    const { spawns } = defaultConfig().maps.grid;
+    assert.ok(spawns.jetChance < spawns.enemy5Chance);
     const s = game(1, (c) => { c.gameplay.jetChance = 1; });
     s.spawnT = 0;
     step(s, DT, still);

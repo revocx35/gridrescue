@@ -213,3 +213,6 @@ input[type="color"] {
 .drop-hint { color: inherit; opacity: 0.7; }
 .drop-active { outline: 2px dashed var(--accent); outline-offset: 3px; border-radius: 10px; }
 @media (hover: none) { .drop-hint { display: none; } }
+
+.spawn-panel { margin-bottom: 12px; }
+.spawn-note { margin: 12px 0 0; font-size: 13px; color: var(--muted); }

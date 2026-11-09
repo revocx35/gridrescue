@@ -99,14 +99,8 @@ export const GAMEPLAY_FIELDS = {
   companionDistance: { label: 'Companion joins within this distance of the hostage', min: 300, max: 40000, step: 50 },
   hintSeconds: { label: 'Direction light duration (s)', min: 0.2, max: 10, step: 0.1 },
   hintSpread: { label: 'Direction light width (degrees)', min: 10, max: 170, step: 1 },
-  spawnInterval: { label: 'Seconds between enemy spawns', min: 0.1, max: 20, step: 0.05 },
-  enemy1Chance: { label: 'Chance a spawn is Enemy 1 (0 to 1)', min: 0, max: 1, step: 0.01 },
-  enemy5Chance: { label: 'Chance a spawn is Enemy 5 (0 to 1)', min: 0, max: 1, step: 0.01 },
-  jetChance: { label: 'Chance a spawn is the Su-34 (0 to 1)', min: 0, max: 1, step: 0.001 },
-  bossChance: { label: 'Chance a spawn is the boss in Endless mode (0 to 1)', min: 0, max: 1, step: 0.001 },
   difficultyKills: { label: 'Kills per difficulty level', min: 1, max: 10000, step: 1 },
   difficultyIncrease: { label: 'Enemy stat increase per level (%)', min: 0, max: 1000, step: 1 },
-  maxEnemies: { label: 'Most enemies at once', min: 1, max: 120, step: 1 },
   attackRange: { label: 'Auto-attack range', min: 100, max: 1500, step: 10 },
   arenaRadius: { label: 'Boss arena radius', min: 250, max: 2000, step: 10 },
   xpToUpgrade: { label: 'XP needed for each upgrade', min: 1, max: 100000, step: 1 },
@@ -114,6 +108,23 @@ export const GAMEPLAY_FIELDS = {
   upgradeHealth: { label: 'Health added by the upgrade', min: 1, max: 100000, step: 1 },
   upgradeFireRate: { label: 'Fire rate upgrade (% faster)', min: 1, max: 1000, step: 1 },
 };
+
+// Set per map. Whatever chance is left over after Enemy 1 and Enemy 5 goes to Enemy 2.
+const SPAWN_FIELDS = {
+  spawnInterval: { label: 'Seconds between enemy spawns', min: 0.1, max: 20, step: 0.05 },
+  maxEnemies: { label: 'Most enemies at once', min: 1, max: 120, step: 1 },
+  enemy1Chance: { label: 'Chance a spawn is Enemy 1 (0 to 1)', min: 0, max: 1, step: 0.01 },
+  enemy5Chance: { label: 'Chance a spawn is Enemy 5 (0 to 1)', min: 0, max: 1, step: 0.01 },
+  jetChance: { label: 'Chance a spawn is the Su-34 (0 to 1)', min: 0, max: 1, step: 0.001 },
+  bossChance: { label: 'Chance a spawn is the boss in Endless mode (0 to 1)', min: 0, max: 1, step: 0.001 },
+};
+
+const BUS_SPAWN_FIELD = { busChance: { label: 'Rocketeer buses: chance per map area (0 to 1)', min: 0, max: 1, step: 0.01 } };
+
+/** The spawn settings one map has. */
+export const spawnFields = (mapId) => (mapId === BUS_MAP ? { ...SPAWN_FIELDS, ...BUS_SPAWN_FIELD } : SPAWN_FIELDS);
+
+export const SPAWN_KEYS = [...Object.keys(SPAWN_FIELDS), ...Object.keys(BUS_SPAWN_FIELD)];
 
 export const SITE_TEXT_FIELDS = {
   title: { label: 'Game title', max: 60, required: true },
@@ -170,6 +181,9 @@ const NAMES = {
   },
 };
 
+const DEFAULT_SPAWNS = { spawnInterval: 1.15, maxEnemies: 36, enemy1Chance: 0.14, enemy5Chance: 0.04, jetChance: 0.015, bossChance: 0.005 };
+const DEFAULT_BUS_CHANCE = 0.2;
+
 const DEFAULT_SIGNS = ['TURN BACK', 'NO SIGNAL', 'LAST BUS LEFT YEARS AGO', 'DO NOT FEED THE ROCKETEERS', 'NOTHING AHEAD'];
 
 function defaultCharacters(map) {
@@ -198,7 +212,7 @@ function defaultCharacters(map) {
 /** The settings one game runs with: the shared rules plus that map's characters. */
 export function mapConfig(config, mapId) {
   const map = config.maps[mapId];
-  return { site: config.site, gameplay: config.gameplay, mapId, name: map.name, characters: map.characters, signs: map.signs ?? [] };
+  return { site: config.site, gameplay: { ...config.gameplay, ...map.spawns }, mapId, name: map.name, characters: map.characters, signs: map.signs ?? [] };
 }
 
 export function defaultConfig() {
@@ -228,6 +242,7 @@ export function defaultConfig() {
     maps: Object.fromEntries(MAPS.map((map) => [map, {
       name: NAMES[map].map,
       characters: defaultCharacters(map),
+      spawns: { ...DEFAULT_SPAWNS, ...(map === BUS_MAP ? { busChance: DEFAULT_BUS_CHANCE } : {}) },
       ...(hasSigns(map) ? { signs: [...DEFAULT_SIGNS] } : {}),
     }])),
     gameplay: {
@@ -236,14 +251,8 @@ export function defaultConfig() {
       companionDistance: 1500,
       hintSeconds: 1.4,
       hintSpread: 55,
-      spawnInterval: 1.15,
-      enemy1Chance: 0.14,
-      enemy5Chance: 0.04,
-      jetChance: 0.015,
-      bossChance: 0.005,
       difficultyKills: 25,
       difficultyIncrease: 10,
-      maxEnemies: 36,
       attackRange: 450,
       arenaRadius: 560,
       xpToUpgrade: 200,
@@ -298,6 +307,14 @@ function readNumber(value, path, spec, errors) {
   }
   if (value < spec.min || value > spec.max) errors.push(`${path}: must be between ${spec.min} and ${spec.max}`);
   return value;
+}
+
+function readSpawns(input, mapId, path, errors) {
+  const spawns = isObject(input) ? input : {};
+  if (!isObject(input)) errors.push(`${path}: is required`);
+  const fields = spawnFields(mapId);
+  checkKeys(spawns, Object.keys(fields), path, errors);
+  return Object.fromEntries(Object.entries(fields).map(([key, spec]) => [key, readNumber(spawns[key], `${path}.${key}`, spec, errors)]));
 }
 
 function readSigns(input, path, errors) {
@@ -410,10 +427,11 @@ export function validateConfig(input) {
     const path = `maps.${mapId}`;
     const map = isObject(maps[mapId]) ? maps[mapId] : {};
     if (!isObject(maps[mapId])) errors.push(`${path}: is required`);
-    checkKeys(map, ['name', 'characters', ...(hasSigns(mapId) ? ['signs'] : [])], path, errors);
+    checkKeys(map, ['name', 'characters', 'spawns', ...(hasSigns(mapId) ? ['signs'] : [])], path, errors);
     value.maps[mapId] = {
       name: readText(map.name, `${path}.name`, MAX_MAP_NAME_LENGTH, true, errors),
       characters: readCharacters(map.characters, mapId, `${path}.characters`, errors),
+      spawns: readSpawns(map.spawns, mapId, `${path}.spawns`, errors),
     };
     if (hasSigns(mapId)) value.maps[mapId].signs = readSigns(map.signs, `${path}.signs`, errors);
   }

@@ -2,7 +2,7 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { MAPS, NAMED_ROLES, ROLE_FIELDS, SOUND_FILE, SOUND_SLOTS, SPRITE_HASH, defaultConfig, hasSigns, mapRoles, validateConfig } from '../public/js/schema.js';
+import { MAPS, NAMED_ROLES, ROLE_FIELDS, SOUND_FILE, SOUND_SLOTS, SPAWN_KEYS, SPRITE_HASH, defaultConfig, hasSigns, mapRoles, spawnFields, validateConfig } from '../public/js/schema.js';
 
 export function writeAtomic(file, data) {
   const tmp = `${file}.${crypto.randomBytes(6).toString('hex')}.tmp`;
@@ -25,7 +25,7 @@ function withEditableFields(config) {
       characters[role] = NAMED_ROLES.includes(role) ? { name: stored.name } : {};
       for (const field of ROLE_FIELDS[role]) characters[role][field] = stored[field];
     }
-    maps[mapId] = { name: config.maps[mapId].name, characters };
+    maps[mapId] = { name: config.maps[mapId].name, characters, spawns: config.maps[mapId].spawns };
     if (hasSigns(mapId)) maps[mapId].signs = config.maps[mapId].signs;
   }
   return { site: config.site, maps, gameplay: config.gameplay };
@@ -43,6 +43,12 @@ function mapsFromFlatConfig(stored) {
   return { [MAPS[0]]: { characters } };
 }
 
+/** Spawn settings used to be shared, so a value still in the old place applies to every map. */
+function upgradedSpawns(mapId, base, stored, map) {
+  const shared = Object.fromEntries(Object.keys(spawnFields(mapId)).filter((key) => key in (stored.gameplay ?? {})).map((key) => [key, stored.gameplay[key]]));
+  return { ...base.maps[mapId].spawns, ...shared, ...map?.spawns };
+}
+
 /** Fills fields added by newer versions with their defaults. */
 function upgrade(stored) {
   const base = defaultConfig();
@@ -56,9 +62,10 @@ function upgrade(stored) {
     const map = storedMaps[mapId];
     const characters = {};
     for (const role of mapRoles(mapId)) characters[role] = { ...base.maps[mapId].characters[role], ...map?.characters?.[role] };
-    merged.maps[mapId] = { name: map?.name ?? base.maps[mapId].name, characters };
+    merged.maps[mapId] = { name: map?.name ?? base.maps[mapId].name, characters, spawns: upgradedSpawns(mapId, base, stored, map) };
     if (hasSigns(mapId)) merged.maps[mapId].signs = map?.signs ?? base.maps[mapId].signs;
   }
+  for (const key of SPAWN_KEYS) delete merged.gameplay[key];
   // Before there were two joysticks the single one could be centred.
   if (merged.site.joystickSide === 'center') merged.site.joystickSide = 'left';
   return merged;
