@@ -25,6 +25,8 @@ const BALL_TTL = 5;
 const LONGEST_FRAME = 0.1;
 const NEAREST_HOSTAGE_FACTOR = 0.85;
 const FASTEST_SPAWN_FACTOR = 0.42;
+const MOST_LEVEL_SPAWN_FACTOR = 3; // levels never multiply spawns beyond this, so scoreLimits has a true bound
+const MOST_LEVEL_ENEMIES = 120; // levels raise the at-once limit no further than this
 const RESCUE_GAP = 24;
 const KILL_HEAL = { enemy1: 12, enemy2: 3, enemy5: 30, jet: 20, boss: 40, rocketeer: 10 };
 const START_CLEARING = 260;
@@ -65,8 +67,12 @@ export function scoreLimits(cfg) {
   const walk = cfg.gameplay.hostageDistance * NEAREST_HOSTAGE_FACTOR - radius(player.size) - radius(hostage.size) - RESCUE_GAP;
   return {
     minTime: Math.max(0, walk / player.speed) * 0.9,
-    minSpawnGap: 1 / (1 / (cfg.gameplay.spawnInterval * FASTEST_SPAWN_FACTOR) + busKillRate(cfg)),
+    minSpawnGap: 1 / (mostLevelSpawnFactor(cfg) / (cfg.gameplay.spawnInterval * FASTEST_SPAWN_FACTOR) + busKillRate(cfg)),
   };
+}
+
+function mostLevelSpawnFactor(cfg) {
+  return cfg.gameplay.difficultySpawnIncrease > 0 ? MOST_LEVEL_SPAWN_FACTOR : 1;
 }
 
 /** Rocketeers come on top of the spawn pacing: this bounds how many buses a player can run past per second. */
@@ -237,6 +243,11 @@ function killEnemy(s, e) {
 /** Enemy health, damage and XP are multiplied by this; additive per level, like the damage upgrade. */
 function enemyFactor(s) {
   return 1 + ((s.level - 1) * s.cfg.gameplay.difficultyIncrease) / 100;
+}
+
+/** How many times as often enemies spawn at this level; additive per level, up to the fixed ceiling. */
+function levelSpawnFactor(s) {
+  return Math.min(mostLevelSpawnFactor(s.cfg), 1 + ((s.level - 1) * s.cfg.gameplay.difficultySpawnIncrease) / 100);
 }
 
 function updateDifficulty(s) {
@@ -480,10 +491,13 @@ function updateSpawning(s, dt) {
   s.spawnT -= dt;
   if (s.spawnT > 0) return;
   const base = s.cfg.gameplay.spawnInterval;
-  const interval = Math.max(base * FASTEST_SPAWN_FACTOR, base * (1 - s.time / 260));
+  const factor = levelSpawnFactor(s);
+  const interval = Math.max(base * FASTEST_SPAWN_FACTOR, base * (1 - s.time / 260)) / factor;
   s.spawnT = interval * (s.boss.mode === 'fight' ? 2.2 : 1);
   const roaming = s.enemies.filter((e) => e.kind !== 'rocketeer').length; // bus crews must not crowd out spawns
-  if (roaming < s.cfg.gameplay.maxEnemies) spawnEnemy(s);
+  // Without room to grow, faster spawns would just hit the limit. An admin's own limit above the ceiling still stands.
+  const { maxEnemies } = s.cfg.gameplay;
+  if (roaming < Math.max(maxEnemies, Math.min(MOST_LEVEL_ENEMIES, Math.round(maxEnemies * factor)))) spawnEnemy(s);
 }
 
 function addCompanion(s, role = 'companion') {

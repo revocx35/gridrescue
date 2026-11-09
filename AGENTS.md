@@ -38,7 +38,7 @@ compose.yaml, Dockerfile           Hardened deployment
 
 ```sh
 npm ci                        # install
-npm test                      # all tests (433): rules, modes, editor, PNG, audio, auth, real OIDC client against a local issuer
+npm test                      # all tests (440): rules, modes, editor, PNG, audio, auth, real OIDC client against a local issuer
 npm start                     # plain HTTP unless TLS_* is set; needs PUBLIC_URL for sign-in
 scripts/setup.sh IP:x.x.x.x   # once per checkout
 docker compose up -d --build  # deploy
@@ -108,6 +108,7 @@ docker compose up -d --build  # deploy
 - Flat configs from before maps become the first map in `Store.upgrade`. The 10/40 XP swap runs only on that flat form, so an
   admin who later picks those values keeps them.
 - `upgradeDamage` and `upgradeFireRate` are percentages of the base value and stack additively (`s.gun.*Percent`).
+- Levels speed up spawns by `difficultySpawnIncrease` percent each and raise the at-once limit with them. `MOST_LEVEL_SPAWN_FACTOR` is a hard ceiling because `scoreLimits` relies on it: without one, the kill-rate limit has no bound.
 - `scoreLimits` in `sim.js` must stay true of real play. If spawn pacing, hostage distance, movement or bus density changes, update it and
   keep the "score limits" test passing, or real wins get rejected.
 - The page sets `user-select: none`, and global key handlers treat WASD as movement. Any new text input needs

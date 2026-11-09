@@ -1520,6 +1520,65 @@ describe('Su-34 and Kh-29', () => {
   });
 });
 
+describe('spawns by level', () => {
+  const atLevel = (level, edit) => {
+    const s = game(1, (c) => { c.gameplay.difficultyKills = 10; c.gameplay.spawnInterval = 1; c.characters.player.damage = 0; edit?.(c); });
+    s.kills = (level - 1) * 10;
+    s.level = level;
+    return s;
+  };
+  const nextInterval = (s) => {
+    s.spawnT = 0;
+    s.time = 0;
+    step(s, DT, still);
+    return s.spawnT;
+  };
+
+  it('spawns as often as configured at level 1', () => {
+    assert.ok(Math.abs(nextInterval(atLevel(1)) - 1) < 0.02);
+  });
+
+  it('spawns more often as the level rises', () => {
+    assert.ok(Math.abs(nextInterval(atLevel(6)) - 1 / 1.5) < 0.02);
+    assert.ok(Math.abs(nextInterval(atLevel(11)) - 1 / 2) < 0.02);
+  });
+
+  it('stops speeding up at three times the rate', () => {
+    assert.ok(Math.abs(nextInterval(atLevel(500)) - 1 / 3) < 0.02);
+  });
+
+  it('can be switched off', () => {
+    assert.ok(Math.abs(nextInterval(atLevel(30, (c) => { c.gameplay.difficultySpawnIncrease = 0; })) - 1) < 0.02);
+  });
+
+  it('raises the most at once with the level', () => {
+    const s = atLevel(11, (c) => { c.gameplay.maxEnemies = 2; });
+    for (let i = 0; i < 30; i++) nextInterval(s);
+    assert.equal(s.enemies.length, 4);
+  });
+
+  it('never lifts the most at once past the ceiling, and keeps a higher limit an admin set', () => {
+    const fill = (maxEnemies) => {
+      const s = atLevel(500, (c) => { c.gameplay.maxEnemies = maxEnemies; });
+      const count = () => {
+        s.spawnT = 0;
+        s.time = 0;
+        step(s, DT, still);
+        return s.enemies.length;
+      };
+      const seen = Array.from({ length: 200 }, count);
+      return Math.max(...seen);
+    };
+    assert.equal(fill(60), 120);
+    assert.equal(fill(150), 150);
+  });
+
+  it('allows for the fastest spawns in the score limits', () => {
+    const gap = (increase) => scoreLimits(game(1, (c) => { c.gameplay.difficultySpawnIncrease = increase; }).cfg).minSpawnGap;
+    assert.ok(Math.abs(gap(10) - gap(0) / 3) < 1e-9);
+  });
+});
+
 describe('score limits', () => {
   it('real wins always fall inside the limits the server enforces', () => {
     let wins = 0;

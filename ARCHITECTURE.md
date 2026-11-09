@@ -38,7 +38,7 @@ are deleted on every commit. A monotonically increasing `revision` gives optimis
   the hostage is free from the start.
 - The difficulty level is `1 + floor(kills / difficultyKills)`. Each level adds `difficultyIncrease` percent of the base health,
   damage and XP. Spawns take the level they appear at; the boss is rescaled
-  when the level changes, keeping its share of health. Projectiles gain damage. Speed and size never change.
+  when the level changes, keeping its share of health. Projectiles gain damage. Speed and size never change. Each level also makes enemies spawn `difficultySpawnIncrease` percent more often (additive, default 10, at most three times the rate) and raises the map's most-at-once limit by the same factor, up to 120 unless the admin's own limit is higher. The score limits allow for the fastest rate, so the kill-rate check is three times looser than it was.
 - The Su-34 is picked like any other spawn and is limited by its own settings. It flies a straight line past the
   player, launching a Kh-29 every `fireInterval` seconds while in view. Missiles home with a limited turn rate, ignore obstacles,
   expire after 8 seconds, and are ignored by bullets and auto-aim. Only a click or tap on one destroys it, which gives no kill
