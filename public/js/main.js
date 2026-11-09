@@ -10,6 +10,8 @@ const FIXED_STEP = 1 / 60;
 const NAME_KEY = 'gridrescue-name';
 const MAP_KEY = 'gridrescue-map';
 const MODE_KEY = 'gridrescue-mode';
+const AIM_BOSS_KEY = 'gridrescue-aim-boss';
+const AIM_BOSS_CHOICES = ['off', 'on'];
 // How far from a missile a press still counts, in CSS pixels. Fingers are less exact than a cursor.
 const MISSILE_REACH = { touch: 44, mouse: 28 };
 const $ = (id) => document.getElementById(id);
@@ -159,6 +161,7 @@ class Game {
     this.fullConfig = fullConfig;
     this.loadMapSprites = loadMapSprites;
     this.gameMode = recall(MODE_KEY, GAME_MODES);
+    this.aimBoss = recall(AIM_BOSS_KEY, AIM_BOSS_CHOICES) === 'on';
     this.sounds = new SoundBoard();
     this.useMap(mapId, sprites, true);
     this.renderer = new Renderer($('game'), this.config, sprites);
@@ -180,6 +183,8 @@ class Game {
     $('game').addEventListener('pointerdown', (e) => this.onCanvasPress(e));
     $('pause-btn').addEventListener('click', () => this.pause());
     $('shop-btn').addEventListener('click', () => this.openShop());
+    $('aim-boss-btn').setAttribute('aria-pressed', String(this.aimBoss));
+    $('aim-boss-btn').addEventListener('click', () => this.toggleAimBoss());
     $('score-form').addEventListener('submit', (e) => this.onScoreSubmit(e));
     $('score-name').maxLength = MAX_SCORE_NAME_LENGTH;
     $('board-toggle').addEventListener('click', () => this.toggleBoard());
@@ -203,6 +208,13 @@ class Game {
     if (destroyMissileAt(this.state, x, y, reach)) {
       for (const gameEvent of this.state.events.splice(0)) this.handleEvent(gameEvent);
     }
+  }
+
+  toggleAimBoss() {
+    this.aimBoss = !this.aimBoss;
+    remember(AIM_BOSS_KEY, this.aimBoss ? 'on' : 'off');
+    $('aim-boss-btn').setAttribute('aria-pressed', String(this.aimBoss));
+    $('aim-boss-btn').blur(); // or Space during play would keep switching it
   }
 
   useMap(mapId, sprites, firstTime = false) {
@@ -421,7 +433,7 @@ class Game {
       roster: true,
       picker: true,
       boardButton: true,
-      hint: 'Move with WASD or the arrow keys. Attacks fire on their own; hold the mouse button to aim. Press B for the upgrade shop.',
+      hint: 'Move with WASD or the arrow keys. Attacks fire on their own; hold the mouse button to aim. Aim boss makes shots go for a boss first. Press B for the upgrade shop.',
     });
   }
 
@@ -632,7 +644,7 @@ class Game {
     const { player } = this.state;
     const held = this.aimStick.vector;
     const aim = held.x || held.y ? held : this.mouseAim.vectorFrom(this.renderer.toScreen(player.x, player.y));
-    return { x: keys.x + stick.x, y: keys.y + stick.y, aimX: aim.x, aimY: aim.y };
+    return { x: keys.x + stick.x, y: keys.y + stick.y, aimX: aim.x, aimY: aim.y, aimBoss: this.aimBoss };
   }
 
   setBar(id, fraction) {

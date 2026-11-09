@@ -4,6 +4,7 @@ import { CHUNK_SIZE, createForest, createWasteland, forEachItemIn, hitsSolid, pu
 const TAU = Math.PI * 2;
 const DEG = Math.PI / 180;
 const SHOT_SPEED = 680;
+const SHOT_SECONDS = 0.95;
 const BOSS_BULLET_SPEED = 300;
 const DESPAWN_DISTANCE = 2600;
 const PLAYER_GRACE = 0.28;
@@ -167,11 +168,23 @@ function playerWeapon(s) {
   };
 }
 
-function fireAt(s, shooter, weapon, dt) {
+/** The nearest boss a shot can reach. Only on screen: firing at an unseen Rescue boss would give the hostage away. */
+function bossInSights(s, from, weapon) {
+  let best = null;
+  let bestD = (weapon.ttl ?? SHOT_SECONDS) * SHOT_SPEED;
+  for (const boss of [s.boss, ...s.enemies.filter((e) => e.kind === 'boss')]) {
+    if (boss === s.boss && !boss.alive) continue;
+    const d = dist(from, boss) - boss.r * 0.6;
+    if (d < bestD && onScreen(s, boss)) { best = boss; bestD = d; }
+  }
+  return best;
+}
+
+function fireAt(s, shooter, weapon, dt, preferBoss = false) {
   shooter.cool -= dt;
   if (shooter.cool > 0) return;
   const reach = weapon.ttl ? weapon.ttl * SHOT_SPEED : Infinity;
-  const target = nearestEnemy(s, shooter, Math.min(s.cfg.gameplay.attackRange, reach));
+  const target = (preferBoss && bossInSights(s, shooter, weapon)) || nearestEnemy(s, shooter, Math.min(s.cfg.gameplay.attackRange, reach));
   if (!target) return;
   shooter.cool = weapon.fireInterval;
   const lead = dist(shooter, target) / SHOT_SPEED;
@@ -187,7 +200,7 @@ function pushShots(s, shooter, weapon, angle) {
     s.shots.push({
       x: shooter.x, y: shooter.y,
       vx: Math.cos(a) * SHOT_SPEED, vy: Math.sin(a) * SHOT_SPEED,
-      ttl: weapon.ttl ?? 0.95, damage: weapon.damage, ally: shooter !== s.player,
+      ttl: weapon.ttl ?? SHOT_SECONDS, damage: weapon.damage, ally: shooter !== s.player,
       pierce: weapon.pierce ?? 0,
     });
   }
@@ -1005,7 +1018,7 @@ function updateRescue(s) {
   emit(s, 'win');
 }
 
-/** Advances the game by dt seconds. input is { x, y } to move and optional { aimX, aimY } to aim. */
+/** Advances the game by dt seconds. input is { x, y } to move, optional { aimX, aimY } to aim and optional aimBoss to put a boss ahead of other targets. */
 export function step(s, dt, input) {
   if (s.status !== 'playing') return;
   s.time += dt;
@@ -1038,7 +1051,7 @@ export function step(s, dt, input) {
   updateBusCrews(s);
   const weapon = playerWeapon(s);
   if (p.aim) fireAimed(s, p, weapon, p.aim, dt);
-  else fireAt(s, p, weapon, dt);
+  else fireAt(s, p, weapon, dt, input.aimBoss);
   s.companions.forEach((m, index) => updateCompanion(s, m, index, dt));
   updateEnemies(s, dt);
   updateBoss(s, dt);

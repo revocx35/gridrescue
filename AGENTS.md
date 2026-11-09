@@ -38,7 +38,7 @@ compose.yaml, Dockerfile           Hardened deployment
 
 ```sh
 npm ci                        # install
-npm test                      # all tests (425): rules, modes, editor, PNG, audio, auth, real OIDC client against a local issuer
+npm test                      # all tests (433): rules, modes, editor, PNG, audio, auth, real OIDC client against a local issuer
 npm start                     # plain HTTP unless TLS_* is set; needs PUBLIC_URL for sign-in
 scripts/setup.sh IP:x.x.x.x   # once per checkout
 docker compose up -d --build  # deploy
@@ -133,6 +133,7 @@ docker compose up -d --build  # deploy
 - The personal laser only removes `s.bullets` flying towards the player. It skips Enemy 5's ball, and it does not touch rockets or Kh-29s, which live in `s.missiles`.
 - Take a frame's duration only from `frameSeconds`. `requestAnimationFrame` timestamps can be earlier than a `performance.now()` read in an input handler, and a negative duration gives a ring a negative radius: `arc` throws, and an exception in `Game.frame` ends the game loop for good.
 - Kamikaze is not a kill: no XP and no `kills` increment unless a shot gets it first. It is not offered for the boss (`notFor` in `CHARACTER_FIELDS`).
+- `step`'s `input.aimBoss` only changes the player's auto-aim (`bossInSights`). Bosses live in two places: `s.boss` in Rescue and `s.enemies` with `kind: 'boss'` in Endless, so anything aiming at bosses must check both.
 - Playwright's `wait_for_function` is blocked by the CSP (no `unsafe-eval`). Use selector waits in browser tests.
 - Each spawning character has `firstSpawn` (seconds) and `maxAlive` (0 = no limit), checked in `canSpawn`; `updateBusCrews` applies them to the Rocketeer. Enemy 5 and the Su-34 default to 40 and 60 seconds, so spawn tests must set `s.time`.
 - Removing or renaming a config option needs a mapping in `Store.upgrade`. A stored value that no longer validates makes

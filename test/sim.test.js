@@ -315,6 +315,71 @@ describe('aiming', () => {
     assert.ok(s.shots[0].vx > 0);
   });
 
+  describe('aim at boss', () => {
+    const wide = { halfW: 900, halfH: 700 };
+    const aimBoss = { x: 0, y: 0, aimBoss: true };
+    const setUp = (bossX, view = wide) => {
+      const s = game();
+      s.spawnT = 1e9;
+      s.view = view;
+      Object.assign(s.boss, { x: s.player.x + bossX, y: s.player.y });
+      placeEnemy(s, 'enemy2', s.player.x + 100, s.player.y).speed = 0;
+      return s;
+    };
+
+    it('shoots the boss ahead of a nearer enemy', () => {
+      const s = setUp(-300);
+      step(s, DT, aimBoss);
+      assert.ok(s.shots[0].vx < 0);
+    });
+
+    it('leaves auto-aim alone when off', () => {
+      const s = setUp(-300);
+      step(s, DT, still);
+      assert.ok(s.shots[0].vx > 0);
+    });
+
+    it('reaches past the auto-attack range, as far as a bullet flies', () => {
+      const s = setUp(-600);
+      step(s, DT, aimBoss);
+      assert.ok(s.shots[0].vx < 0);
+    });
+
+    it('goes back to the nearest enemy when no bullet could reach the boss', () => {
+      const s = setUp(-850);
+      step(s, DT, aimBoss);
+      assert.ok(s.shots[0].vx > 0);
+    });
+
+    it('does not give away a boss that is off screen', () => {
+      const s = setUp(-400, { halfW: 300, halfH: 300 });
+      step(s, DT, aimBoss);
+      assert.ok(s.shots[0].vx > 0);
+    });
+
+    it('ignores a dead boss', () => {
+      const s = setUp(-300);
+      s.boss.alive = false;
+      step(s, DT, aimBoss);
+      assert.ok(s.shots[0].vx > 0);
+    });
+
+    it('finds an Endless boss among the enemies', () => {
+      const s = setUp(-300);
+      s.boss.alive = false;
+      placeEnemy(s, 'boss', s.player.x - 300, s.player.y).speed = 0;
+      step(s, DT, aimBoss);
+      assert.ok(s.shots[0].vx < 0);
+    });
+
+    it('gives way to the aim stick', () => {
+      const s = setUp(-300);
+      step(s, DT, { ...aimBoss, aimX: 0, aimY: -1 });
+      assert.ok(Math.abs(s.shots[0].vx) < 1e-9);
+      assert.ok(s.shots[0].vy < 0);
+    });
+  });
+
   it('respects the fire interval', () => {
     const s = game();
     s.spawnT = 1e9;

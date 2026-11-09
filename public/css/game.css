@@ -157,6 +157,7 @@ body {
   cursor: pointer;
 }
 .shop-btn.has-points { border-color: var(--accent); }
+.shop-btn[aria-pressed="true"] { border-color: var(--accent); background: var(--accent); color: #06100e; }
 .shop-btn:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
 .shop-count {
   display: grid;
@@ -170,10 +171,11 @@ body {
   font-size: 12px;
   font-variant-numeric: tabular-nums;
 }
-body[data-layout="desktop"] .shop-btn { display: none; }
+body[data-layout="desktop"] #shop-btn { display: none; }
 body[data-layout="mobile"] #points-label { display: none; }
 /* A phone has no width for the buttons and the counters in one line next to the health bar. */
-body[data-layout="mobile"] .stats { flex-wrap: wrap; justify-content: flex-end; gap: 6px 10px; max-width: 150px; }
+body[data-layout="mobile"] .stats { flex-wrap: wrap; justify-content: flex-end; gap: 6px 10px; max-width: 186px; }
+body[data-layout="mobile"] .shop-btn { padding: 0 10px; }
 body[data-layout="mobile"] .stat { order: 1; }
 
 .boss-vital { max-width: 420px; margin: 8px auto 0; text-align: center; }

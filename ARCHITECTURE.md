@@ -113,7 +113,9 @@ each side of the game because there is not enough height to stack them.
   runs one; it only parses and rebuilds PNG. An animated image keeps its first frame.
 - **Content-addressed sprites** can be cached forever, and two roles may share one file.
 - **Auto-fire with optional aiming.** Holding the aim stick, or the left mouse button on desktop, fires that way; letting
-  go returns to auto-aim, so the game stays playable with one thumb or the keyboard alone.
+  go returns to auto-aim, so the game stays playable with one thumb or the keyboard alone. The Aim boss toggle in the HUD,
+  remembered in `localStorage`, puts a boss ahead of every other auto-aim target for the player's own shots. It applies
+  only on screen and within bullet flight, so it cannot point at the unseen Rescue boss and give the hostage away.
 - **Shared `schema.js`** so server validation and admin form limits cannot drift apart.
 
 ## Platform constraints

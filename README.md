@@ -26,7 +26,7 @@ Nobody needs an account to play. An admin signs in through [Authentik](https://g
 | | |
 |---|---|
 | Move | WASD or arrow keys, or the left joystick |
-| Attack | Automatic: you and your companion fire at the nearest enemy in range. Hold the right joystick on phones, or the left mouse button on desktop, to aim yourself |
+| Attack | Automatic: you and your companion fire at the nearest enemy in range. Hold the right joystick on phones, or the left mouse button on desktop, to aim yourself. The Aim boss button makes your own shots go for a boss first whenever one is on screen and in bullet range |
 | Find the hostage | Every enemy you destroy briefly lights a wedge of the grid. The hostage is somewhere inside it |
 | Maps | Choose on the start screen. The Grid is open floor; the forest map is full of trees and exploded tanks that block movement and bullets; the White Wasteland has green signs and wrecked buses that block walking, and brown trees and rubbish hills that block walking and bullets |
 | Modes | Rescue is the main game. Endless has no hostage: survive as long as you can while the boss turns up, at the rate the admin sets, as just another enemy |
