@@ -30,6 +30,14 @@ are deleted on every commit. A monotonically increasing `revision` gives optimis
   cache can be dropped at any time and nothing is stored. Trees and tanks are circles to collision. Actors slide around
   them and big actors count as slim so they fit between trees. Bullets stop on them; enemy 5's ball does not. The start and
   the boss arena are kept clear.
+- `enabled` on a role removes it from that map: spawns, the roster, the companion upgrade, and for the boss the fight itself, so
+  the hostage is free from the start.
+- The difficulty level is `1 + floor(kills / difficultyKills)`. Each level adds `difficultyIncrease` percent of the base health,
+  damage, size (capped at the largest size the admin may set) and XP. Spawns take the level they appear at; the boss is rescaled
+  when the level changes, keeping its share of health. Projectiles gain damage, and missiles also health. Speed never changes.
+- The Su-34 replaces a regular spawn at `jetChance`, one at a time and not in the first minute. It flies a straight line past the
+  player, launching a Kh-29 every `fireInterval` seconds while in view. Missiles home with a limited turn rate, ignore obstacles,
+  expire after 8 seconds and are favoured by auto-aim. Shooting one down gives no kill and no XP.
 - The hostage is placed at a random angle, 85 to 115% of `hostageDistance` from the start.
 - Enemies appear just outside the view at intervals that shorten over time. Enemy 1 is a weighted rarity
   (`enemy1Chance`) with more health and damage. Enemy 5 is rarer still (`enemy5Chance`) and cannot appear in the first 40
@@ -49,7 +57,7 @@ are deleted on every commit. A monotonically increasing `revision` gives optimis
   `xpToUpgrade` the state becomes `levelup`, which `step` ignores, so the world is truly frozen until `applyUpgrade`. XP
   over the threshold carries over and can open the menu again at once.
 - Upgrades belong to the run (`s.gun`, `s.companions`, `player.maxHp`) and never change the admin's config: pump gun, a
-  percentage more of base damage (additive), more health, one more companion (at most six), and bullets piercing one more enemy. Companions keep their own
+  percentage more of base damage (additive), a percentage faster firing (additive), more health, one more companion (at most six), and bullets piercing one more enemy. Companions keep their own
   plain gun.
 - The boss sleeps until the player enters the arena or shoots it, cannot leave the arena, and heals if the player
   runs far enough to make it go home. Under half health its attacks speed up.
@@ -58,8 +66,8 @@ are deleted on every commit. A monotonically increasing `revision` gives optimis
 ## Leaderboard
 
 The server records when each run starts (`POST /api/runs`, a one-time token stored only as a hash, in memory, 3 hour
-life). After a win the browser posts the token, a name, the time and the kills. Only wins can be posted. The map comes from
-the token. Each map keeps its top 50 by shortest time and top 50 by most kills in `leaderboard.json`; the public view shows
+life). When a run ends the browser posts the token, a name, the time, the kills and whether it was a win. Deaths appear only under most
+kills and need at least one kill. The map comes from the token. Each map keeps its top 50 by shortest time and top 50 by most kills in `leaderboard.json`; the public view shows
 ten of each. A restart loses open run tokens, so a run in progress at that moment cannot be saved.
 
 ## Page layout

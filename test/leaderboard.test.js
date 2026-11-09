@@ -21,11 +21,40 @@ describe('leaderboard', () => {
   const board = async () => (await ctx.app.inject({ url: '/api/leaderboard' })).json();
 
   /** Starts a run, lets the seconds pass, and posts a score for it. */
-  async function play({ name = 'Ada', time = GOOD_TIME, kills = 20, map = 'grid' } = {}) {
+  async function play({ name = 'Ada', time = GOOD_TIME, kills = 20, map = 'grid', won = true } = {}) {
     const token = await newRun(map);
     ctx.advance(time * 1000);
-    return post({ token, name, time, kills });
+    return post({ token, name, time, kills, won });
   }
+
+  it('puts a death on the kill table only', async () => {
+    assert.equal((await play({ name: 'Fallen', time: 8, kills: 7, won: false })).statusCode, 200);
+    const { fastest, kills } = (await board()).maps.grid;
+    assert.equal(fastest.length, 0);
+    assert.equal(kills[0].name, 'Fallen');
+  });
+
+  it('does not hold a short run against a death', async () => {
+    assert.equal((await play({ time: 8, kills: 3, won: false })).statusCode, 200);
+    assert.equal((await play({ time: 8, kills: 3, won: true })).statusCode, 403);
+  });
+
+  it('still limits the kills a death can claim', async () => {
+    assert.equal((await play({ time: 8, kills: 5000, won: false })).statusCode, 403);
+  });
+
+  it('refuses a death with no kills', async () => {
+    assert.equal((await play({ time: 8, kills: 0, won: false })).statusCode, 403);
+  });
+
+  it('requires the result to be stated', async () => {
+    assert.equal((await play({ won: 'yes' })).statusCode, 403);
+  });
+
+  it('counts scores saved before deaths could rank as rescues', async () => {
+    fs.writeFileSync(path.join(ctx.dir, 'leaderboard.json'), JSON.stringify({ maps: { grid: [{ id: 'a', name: 'Old', time: 50, kills: 2, at: 1 }], forest: [] } }));
+    assert.equal(new Leaderboard(ctx.dir, { error() {} }).view().maps.grid.fastest[0].name, 'Old');
+  });
 
   it('adds a finished run and shows it', async () => {
     const res = await play();
@@ -47,7 +76,7 @@ describe('leaderboard', () => {
   it('keeps each map separate, taking the map from the run rather than the request', async () => {
     const token = await newRun('forest');
     ctx.advance(GOOD_TIME * 1000);
-    assert.equal((await post({ token, name: 'Ada', time: GOOD_TIME, kills: 3, map: 'grid' })).statusCode, 200);
+    assert.equal((await post({ token, name: 'Ada', time: GOOD_TIME, kills: 3, won: true, map: 'grid' })).statusCode, 200);
     const { maps } = await board();
     assert.equal(maps.grid.fastest.length, 0);
     assert.equal(maps.forest.fastest.length, 1);
@@ -84,22 +113,22 @@ describe('leaderboard', () => {
   it('accepts one score per run', async () => {
     const token = await newRun();
     ctx.advance(GOOD_TIME * 1000);
-    assert.equal((await post({ token, name: 'Ada', time: GOOD_TIME, kills: 1 })).statusCode, 200);
-    assert.equal((await post({ token, name: 'Ada', time: GOOD_TIME, kills: 1 })).statusCode, 403);
+    assert.equal((await post({ token, name: 'Ada', time: GOOD_TIME, kills: 1, won: true })).statusCode, 200);
+    assert.equal((await post({ token, name: 'Ada', time: GOOD_TIME, kills: 1, won: true })).statusCode, 403);
   });
 
   it('rejects a made-up token', async () => {
-    assert.equal((await post({ token: 'nope', name: 'Ada', time: GOOD_TIME, kills: 1 })).statusCode, 403);
+    assert.equal((await post({ token: 'nope', name: 'Ada', time: GOOD_TIME, kills: 1, won: true })).statusCode, 403);
   });
 
   it('rejects a missing token', async () => {
-    assert.equal((await post({ name: 'Ada', time: GOOD_TIME, kills: 1 })).statusCode, 403);
+    assert.equal((await post({ name: 'Ada', time: GOOD_TIME, kills: 1, won: true })).statusCode, 403);
   });
 
   it('rejects an expired run', async () => {
     const token = await newRun();
     ctx.advance(RUN_TTL_MS + 1000);
-    assert.equal((await post({ token, name: 'Ada', time: GOOD_TIME, kills: 1 })).statusCode, 403);
+    assert.equal((await post({ token, name: 'Ada', time: GOOD_TIME, kills: 1, won: true })).statusCode, 403);
   });
 
   it('rejects a time faster than walking to the hostage allows', async () => {
@@ -109,13 +138,13 @@ describe('leaderboard', () => {
   it('rejects a time longer than the run has really been going', async () => {
     const token = await newRun();
     ctx.advance(10_000);
-    assert.equal((await post({ token, name: 'Ada', time: GOOD_TIME, kills: 1 })).statusCode, 403);
+    assert.equal((await post({ token, name: 'Ada', time: GOOD_TIME, kills: 1, won: true })).statusCode, 403);
   });
 
   it('accepts a run that was paused, so took longer than its game time', async () => {
     const token = await newRun();
     ctx.advance((GOOD_TIME + 600) * 1000);
-    assert.equal((await post({ token, name: 'Ada', time: GOOD_TIME, kills: 1 })).statusCode, 200);
+    assert.equal((await post({ token, name: 'Ada', time: GOOD_TIME, kills: 1, won: true })).statusCode, 200);
   });
 
   it('rejects more kills than enemies could have spawned', async () => {
@@ -129,15 +158,15 @@ describe('leaderboard', () => {
     it(`rejects ${label}`, async () => {
       const token = await newRun();
       ctx.advance(GOOD_TIME * 1000);
-      assert.equal((await post({ token, name: 'Ada', time, kills })).statusCode, 403);
+      assert.equal((await post({ token, name: 'Ada', time, kills, won: true })).statusCode, 403);
     });
   }
 
   it('lets the player fix a rejected name without losing the run', async () => {
     const token = await newRun();
     ctx.advance(GOOD_TIME * 1000);
-    assert.equal((await post({ token, name: ' ', time: GOOD_TIME, kills: 1 })).statusCode, 422);
-    assert.equal((await post({ token, name: 'Ada', time: GOOD_TIME, kills: 1 })).statusCode, 200);
+    assert.equal((await post({ token, name: ' ', time: GOOD_TIME, kills: 1, won: true })).statusCode, 422);
+    assert.equal((await post({ token, name: 'Ada', time: GOOD_TIME, kills: 1, won: true })).statusCode, 200);
   });
 
   it('stores markup as plain text', async () => {

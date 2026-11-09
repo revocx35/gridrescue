@@ -17,6 +17,7 @@ export const BOARD_SIZE = 10;
 const fastestFirst = (a, b) => a.time - b.time || b.kills - a.kills || a.at - b.at;
 const mostKillsFirst = (a, b) => b.kills - a.kills || a.time - b.time || a.at - b.at;
 const sorted = (entries, order) => [...entries].sort(order);
+const rescues = (entries) => entries.filter((entry) => entry.won !== false); // saved before deaths could rank
 
 export class RunTokens {
   constructor(now = Date.now) {
@@ -51,12 +52,13 @@ export class RunTokens {
     return run ?? null;
   }
 
-  /** True if a run with this time and kill count could really have happened. */
-  isPlausible(run, time, kills) {
-    if (!Number.isFinite(time) || !Number.isInteger(kills) || kills < 0) return false;
+  /** True if a run with this result could really have happened. A death ranks on kills, so needs at least one. */
+  isPlausible(run, { time, kills, won }) {
+    if (typeof won !== 'boolean' || !Number.isFinite(time) || time < 0 || !Number.isInteger(kills) || kills < 0) return false;
     const elapsed = (this.now() - run.started) / 1000;
     const { minTime, minSpawnGap } = run.limits;
-    return time >= minTime && time <= elapsed + CLOCK_GRACE_SECONDS && kills <= time / minSpawnGap + 1;
+    if (won ? time < minTime : kills === 0) return false;
+    return time <= elapsed + CLOCK_GRACE_SECONDS && kills <= time / minSpawnGap + 1;
   }
 }
 
@@ -95,10 +97,10 @@ export class Leaderboard {
   }
 
   /** Adds a score, keeps only the entries that still rank, and reports where this one landed. */
-  add(map, { name, time, kills }) {
-    const entry = { id: crypto.randomBytes(8).toString('hex'), name, time, kills, at: this.now() };
+  add(map, { name, time, kills, won }) {
+    const entry = { id: crypto.randomBytes(8).toString('hex'), name, time, kills, won, at: this.now() };
     const entries = [...this.maps[map], entry];
-    const fastest = sorted(entries, fastestFirst).slice(0, KEEP_PER_RANKING);
+    const fastest = sorted(rescues(entries), fastestFirst).slice(0, KEEP_PER_RANKING);
     const mostKills = sorted(entries, mostKillsFirst).slice(0, KEEP_PER_RANKING);
     const keep = new Set([...fastest, ...mostKills]);
     this.maps[map] = entries.filter((item) => keep.has(item));
@@ -110,7 +112,7 @@ export class Leaderboard {
   view() {
     return {
       maps: Object.fromEntries(MAPS.map((map) => [map, {
-        fastest: sorted(this.maps[map], fastestFirst).slice(0, BOARD_SIZE),
+        fastest: sorted(rescues(this.maps[map]), fastestFirst).slice(0, BOARD_SIZE),
         kills: sorted(this.maps[map], mostKillsFirst).slice(0, BOARD_SIZE),
       }])),
     };

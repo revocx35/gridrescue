@@ -17,12 +17,18 @@ const ORB_PICKUP = 26;
 const ORB_SPEED = 560;
 const MAX_COMPANIONS = 6;
 const ENEMY5_EARLIEST = 40; // seconds into a run, so nobody meets the strongest enemy with a starting gun
+const JET_EARLIEST = 60;
+const MISSILE_TTL = 8;
+const MISSILE_TURN_RATE = 2.4; // radians per second: fast enough to chase, slow enough to sidestep
+const MISSILE_AIM_BIAS = 0.55; // auto-aim treats missiles as this much closer, since they must be shot down
+const JET_MAX_LIFE = 30;
+const MAX_ENEMY_SIZE = 220;
 const BALL_TELEGRAPH = 0.5;
 const BALL_TTL = 5;
 const NEAREST_HOSTAGE_FACTOR = 0.85;
 const FASTEST_SPAWN_FACTOR = 0.42;
 const RESCUE_GAP = 24;
-const KILL_HEAL = { enemy1: 12, enemy2: 3, enemy5: 30 };
+const KILL_HEAL = { enemy1: 12, enemy2: 3, enemy5: 30, jet: 20 };
 const PLAYER_PUMP = { pellets: 5, spread: 0.15, ttl: 0.46, damageFactor: 0.55, intervalFactor: 1.7 };
 export const CELL_SIZE = 80;
 
@@ -60,7 +66,7 @@ export function createGame(cfg, { rng = Math.random, view = { halfW: 500, halfH:
   const arena = cfg.gameplay.arenaRadius;
   const boss = {
     ...actor(hostage.x, hostage.y - arena * 0.4, c.boss),
-    kind: 'boss', mode: 'idle', alive: true,
+    kind: 'boss', size: c.boss.size, mode: 'idle', alive: c.boss.enabled,
     fanT: 1.2, ringT: 3.4, chargeT: 5, windup: 0, dash: 0, dashX: 0, dashY: 0,
   };
   // The arena and the start stay open so a fight is never decided by where a tree landed.
@@ -70,14 +76,14 @@ export function createGame(cfg, { rng = Math.random, view = { halfW: 500, halfH:
   return {
     cfg, rng, view, world,
     status: 'playing',
-    time: 0, kills: 0, spawnT: 1.4, grace: 0,
+    time: 0, kills: 0, level: 1, spawnT: 1.4, grace: 0,
     player: actor(0, 0, c.player),
     companions: [],
     naturalCompanion: false,
     hostage, boss,
-    enemies: [], shots: [], bullets: [], orbs: [],
+    enemies: [], shots: [], bullets: [], orbs: [], missiles: [],
     xp: 0,
-    gun: { damagePercent: 0, pierce: 0, pump: false },
+    gun: { damagePercent: 0, fireRatePercent: 0, pierce: 0, pump: false },
     hint: null,
     events: [],
   };
@@ -96,7 +102,11 @@ function nearestEnemy(s, from, range) {
   }
   if (s.boss.alive) {
     const d = dist(from, s.boss) - s.boss.r * 0.6;
-    if (d < bestD) best = s.boss;
+    if (d < bestD) { best = s.boss; bestD = d; }
+  }
+  for (const m of s.missiles) {
+    const d = dist(from, m) * MISSILE_AIM_BIAS;
+    if (d < bestD) { best = m; bestD = d; }
   }
   return best;
 }
@@ -104,12 +114,13 @@ function nearestEnemy(s, from, range) {
 /** The player's current gun, after upgrades. */
 function playerWeapon(s) {
   const ch = s.cfg.characters.player;
-  const { damagePercent, pierce, pump } = s.gun;
+  const { damagePercent, fireRatePercent, pierce, pump } = s.gun;
   const damage = ch.damage * (1 + damagePercent / 100);
-  if (!pump) return { damage, fireInterval: ch.fireInterval, pierce };
+  const fireInterval = ch.fireInterval / (1 + fireRatePercent / 100);
+  if (!pump) return { damage, fireInterval, pierce };
   return {
     damage: damage * PLAYER_PUMP.damageFactor,
-    fireInterval: ch.fireInterval * PLAYER_PUMP.intervalFactor,
+    fireInterval: fireInterval * PLAYER_PUMP.intervalFactor,
     pierce,
     pellets: PLAYER_PUMP.pellets,
     spread: PLAYER_PUMP.spread,
@@ -165,9 +176,30 @@ function killEnemy(s, e) {
   s.kills += 1;
   s.player.hp = Math.min(s.player.maxHp, s.player.hp + KILL_HEAL[e.kind]);
   emit(s, 'kill', { x: e.x, y: e.y, kind: e.kind });
-  const xp = s.cfg.characters[e.kind].xp;
-  if (xp > 0) s.orbs.push({ x: e.x, y: e.y, xp });
+  if (e.xp > 0) s.orbs.push({ x: e.x, y: e.y, xp: e.xp });
   lightHint(s);
+  updateDifficulty(s);
+}
+
+/** Every enemy stat but speed is multiplied by this; additive per level, like the damage upgrade. */
+function enemyFactor(s) {
+  return 1 + ((s.level - 1) * s.cfg.gameplay.difficultyIncrease) / 100;
+}
+
+function updateDifficulty(s) {
+  const level = 1 + Math.floor(s.kills / s.cfg.gameplay.difficultyKills);
+  if (level === s.level) return;
+  s.level = level;
+  // Spawns pick up the new level as they appear, but the boss already exists and has to be brought up to it.
+  const b = s.boss;
+  const ch = s.cfg.characters.boss;
+  const factor = enemyFactor(s);
+  const health = b.hp / b.maxHp;
+  b.maxHp = ch.hp * factor;
+  b.hp = b.maxHp * health;
+  b.size = Math.min(ch.size * factor, MAX_ENEMY_SIZE);
+  b.r = radius(b.size);
+  emit(s, 'difficulty', { level });
 }
 
 function hurtEnemy(s, e, damage) {
@@ -179,6 +211,7 @@ function hurtEnemy(s, e, damage) {
     e.alive = false;
     s.bullets.length = 0;
     s.enemies.length = 0;
+    s.missiles.length = 0;
     emit(s, 'bossDead', { x: e.x, y: e.y });
   } else {
     killEnemy(s, e);
@@ -223,23 +256,119 @@ function spawnEnemy(s) {
   const x = player.x + Math.cos(angle) * ring;
   const y = player.y + Math.sin(angle) * ring;
   if (Math.hypot(x - hostage.x, y - hostage.y) < g.arenaRadius + 60) return;
-  const roll = rng();
-  const kind = roll < g.enemy5Chance && s.time >= ENEMY5_EARLIEST ? 'enemy5' : roll < g.enemy5Chance + g.enemy1Chance ? 'enemy1' : 'enemy2';
+  if (shouldSpawnJet(s)) {
+    spawnJet(s, x, y);
+    return;
+  }
+  const kind = chooseEnemyKind(s);
+  if (!kind) return;
+  const e = addEnemy(s, kind, x, y);
   const ch = cfg.characters[kind];
-  const e = actor(x, y, ch);
-  e.kind = kind;
   e.speed = ch.speed * (0.92 + rng() * 0.16);
-  e.damage = ch.damage;
   e.attack = kind === 'enemy5' ? 'ball' : ch.attackType;
   if (kind === 'enemy5') {
     e.ballT = ch.fireInterval;
     emit(s, 'enemy5');
   }
+}
+
+function shouldSpawnJet(s) {
+  if (!s.cfg.characters.jet.enabled || s.time < JET_EARLIEST || s.enemies.some((e) => e.kind === 'jet')) return false;
+  return s.rng() < s.cfg.gameplay.jetChance;
+}
+
+function chooseEnemyKind(s) {
+  const c = s.cfg.characters;
+  const g = s.cfg.gameplay;
+  const enemy5Ready = c.enemy5.enabled && s.time >= ENEMY5_EARLIEST;
+  const roll = s.rng();
+  if (enemy5Ready && roll < g.enemy5Chance) return 'enemy5';
+  if (c.enemy1.enabled && roll < g.enemy5Chance + g.enemy1Chance) return 'enemy1';
+  if (c.enemy2.enabled) return 'enemy2';
+  if (c.enemy1.enabled) return 'enemy1';
+  return enemy5Ready ? 'enemy5' : null;
+}
+
+/** A new enemy at the current difficulty level. */
+function addEnemy(s, kind, x, y) {
+  const ch = s.cfg.characters[kind];
+  const factor = enemyFactor(s);
+  const size = Math.min(ch.size * factor, MAX_ENEMY_SIZE);
+  const e = actor(x, y, { size, hp: ch.hp * factor });
+  Object.assign(e, { kind, size, speed: ch.speed, damage: (ch.damage ?? 0) * factor, xp: Math.round(ch.xp * factor) });
   s.enemies.push(e);
+  return e;
+}
+
+/** The jet crosses the view in a straight line, passing near the player, and leaves. */
+function spawnJet(s, x, y) {
+  const { player, view, rng } = s;
+  const ch = s.cfg.characters.jet;
+  const e = addEnemy(s, 'jet', x, y);
+  const heading = Math.atan2(player.y + (rng() - 0.5) * 300 - y, player.x + (rng() - 0.5) * 300 - x);
+  e.heading = heading;
+  e.vx = Math.cos(heading) * ch.speed;
+  e.vy = Math.sin(heading) * ch.speed;
+  e.life = Math.min(JET_MAX_LIFE, (2 * Math.hypot(view.halfW, view.halfH) + 400) / (ch.speed || 1));
+  emit(s, 'jet');
+}
+
+function launchMissile(s, jet) {
+  const ch = s.cfg.characters.missile;
+  const factor = enemyFactor(s);
+  s.missiles.push({
+    x: jet.x, y: jet.y,
+    vx: jet.vx, vy: jet.vy,
+    heading: jet.heading, flash: 0,
+    hp: ch.hp * factor, maxHp: ch.hp * factor,
+    r: radius(ch.size), damage: ch.damage * factor, ttl: MISSILE_TTL,
+  });
+}
+
+function updateJet(s, e, dt) {
+  e.x += e.vx * dt;
+  e.y += e.vy * dt;
+  e.flash = Math.max(0, e.flash - dt);
+  e.life -= dt;
+  e.cool -= dt;
+  if (e.cool <= 0 && onScreen(s, e)) {
+    e.cool = s.cfg.characters.jet.fireInterval;
+    launchMissile(s, e);
+  }
+}
+
+function hurtMissile(s, m, damage) {
+  m.hp -= damage;
+  m.flash = 0.09;
+  if (m.hp > 0) return false;
+  emit(s, 'missileDown', { x: m.x, y: m.y });
+  return true;
+}
+
+function updateMissiles(s, dt) {
+  const { speed } = s.cfg.characters.missile;
+  for (let i = s.missiles.length - 1; i >= 0; i--) {
+    const m = s.missiles[i];
+    m.ttl -= dt;
+    m.flash = Math.max(0, m.flash - dt);
+    const wanted = Math.atan2(s.player.y - m.y, s.player.x - m.x);
+    const turn = Math.atan2(Math.sin(wanted - m.heading), Math.cos(wanted - m.heading));
+    m.heading += Math.sign(turn) * Math.min(Math.abs(turn), MISSILE_TURN_RATE * dt);
+    m.vx = Math.cos(m.heading) * speed;
+    m.vy = Math.sin(m.heading) * speed;
+    m.x += m.vx * dt;
+    m.y += m.vy * dt;
+    const companion = s.companions.find((c) => !c.down && dist(m, c) < m.r + c.r);
+    if (dist(m, s.player) < m.r + s.player.r) hurtPlayer(s, m.damage);
+    else if (companion) hurtCompanion(s, companion, m.damage * 0.6);
+    else if (m.ttl > 0) continue;
+    emit(s, 'missileDown', { x: m.x, y: m.y });
+    s.missiles.splice(i, 1);
+  }
 }
 
 function updateSpawning(s, dt) {
-  if (!s.boss.alive) return;
+  if (s.cfg.characters.boss.enabled && !s.boss.alive) return;
   s.spawnT -= dt;
   if (s.spawnT > 0) return;
   const base = s.cfg.gameplay.spawnInterval;
@@ -255,7 +384,7 @@ function addCompanion(s) {
 }
 
 function maybeSpawnCompanion(s) {
-  if (s.naturalCompanion) return;
+  if (s.naturalCompanion || !s.cfg.characters.companion.enabled) return;
   const g = s.cfg.gameplay;
   if (s.kills < g.companionKills && dist(s.player, s.hostage) > g.companionDistance) return;
   s.naturalCompanion = true;
@@ -354,7 +483,7 @@ function updateBallAttack(s, e, target, dt) {
   s.bullets.push({
     x: e.x, y: e.y,
     vx: Math.cos(e.aim) * ball.speed, vy: Math.sin(e.aim) * ball.speed,
-    ttl: BALL_TTL, r: radius(ball.size), damage: ball.damage, ball: true,
+    ttl: BALL_TTL, r: radius(ball.size), damage: ball.damage * enemyFactor(s), ball: true,
   });
   e.ballT = fireInterval;
   e.windup = 0;
@@ -367,6 +496,11 @@ function updateEnemies(s, dt) {
       s.enemies.splice(i, 1);
       continue;
     }
+    if (e.kind === 'jet') {
+      updateJet(s, e, dt);
+      if (e.life <= 0) s.enemies.splice(i, 1);
+      continue;
+    }
     const target = chaseTarget(s, e);
     const d = dist(e, target) || 1;
     const spec = RANGED[e.attack];
@@ -374,7 +508,7 @@ function updateEnemies(s, dt) {
     let vx = ((target.x - e.x) / d) * e.speed * pace;
     let vy = ((target.y - e.y) / d) * e.speed * pace;
     for (const other of s.enemies) {
-      if (other === e) continue;
+      if (other === e || other.kind === 'jet') continue; // it is in the air
       const ox = e.x - other.x;
       const oy = e.y - other.y;
       const od = Math.hypot(ox, oy);
@@ -410,7 +544,7 @@ function fireBossBullet(s, angle, speed = BOSS_BULLET_SPEED) {
   s.bullets.push({
     x: b.x, y: b.y,
     vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed,
-    ttl: 3.2, r: 9, damage: s.cfg.characters.boss.damage,
+    ttl: 3.2, r: 9, damage: s.cfg.characters.boss.damage * enemyFactor(s),
   });
 }
 
@@ -509,12 +643,12 @@ function updateBoss(s, dt) {
   b.cool -= dt;
   if (b.cool <= 0 && d < b.r + s.player.r) {
     b.cool = 0.75;
-    hurtPlayer(s, ch.damage * 1.6);
+    hurtPlayer(s, ch.damage * enemyFactor(s) * 1.6);
   }
   for (const m of s.companions) {
     if (m.down || b.cool > 0 || dist(b, m) >= b.r + m.r) continue;
     b.cool = 0.75;
-    hurtCompanion(s, m, ch.damage * 1.6);
+    hurtCompanion(s, m, ch.damage * enemyFactor(s) * 1.6);
   }
 }
 
@@ -531,12 +665,16 @@ function updateShots(s, dt) {
     }
     // A shot stops at its first enemy unless it still has pierce left, and hits each enemy once.
     let spent = false;
-    const strike = (e) => {
+    const strike = (e, hurt = hurtEnemy) => {
       (p.struck ??= new Set()).add(e);
       if ((p.pierce ?? 0) > 0) p.pierce -= 1;
       else spent = true;
-      return hurtEnemy(s, e, p.damage);
+      return hurt(s, e, p.damage);
     };
+    for (let j = s.missiles.length - 1; j >= 0 && !spent; j--) {
+      const m = s.missiles[j];
+      if (!p.struck?.has(m) && dist(p, m) < m.r + 6 && strike(m, hurtMissile)) s.missiles.splice(j, 1);
+    }
     for (let j = s.enemies.length - 1; j >= 0 && !spent; j--) {
       const e = s.enemies[j];
       if (!p.struck?.has(e) && dist(p, e) < e.r + 6 && strike(e)) s.enemies.splice(j, 1);
@@ -601,8 +739,8 @@ function updateOrbs(s, dt) {
 
 /** The upgrades on offer right now. */
 export function availableUpgrades(s) {
-  const ids = ['damage', 'health', 'companion', 'pierce'];
-  if (s.companions.length >= MAX_COMPANIONS) ids.splice(ids.indexOf('companion'), 1);
+  const ids = ['damage', 'fireRate', 'health', 'companion', 'pierce'];
+  if (s.companions.length >= MAX_COMPANIONS || !s.cfg.characters.companion.enabled) ids.splice(ids.indexOf('companion'), 1);
   if (!s.gun.pump) ids.unshift('pump');
   return ids;
 }
@@ -613,6 +751,7 @@ export function applyUpgrade(s, id) {
   const g = s.cfg.gameplay;
   if (id === 'pump') s.gun.pump = true;
   if (id === 'damage') s.gun.damagePercent += g.upgradeDamage;
+  if (id === 'fireRate') s.gun.fireRatePercent += g.upgradeFireRate;
   if (id === 'pierce') s.gun.pierce += 1;
   if (id === 'companion') addCompanion(s);
   if (id === 'health') {
@@ -675,6 +814,7 @@ export function step(s, dt, input) {
   updateBoss(s, dt);
   updateShots(s, dt);
   updateBullets(s, dt);
+  updateMissiles(s, dt);
   if (s.status === 'playing') updateOrbs(s, dt);
   if (s.status === 'playing') updateRescue(s);
 }

@@ -132,13 +132,13 @@ export async function createApp(options) {
   app.post('/api/leaderboard', publicWrite(limits.score), async (request, reply) => {
     reply.header('Cache-Control', 'no-store');
     if (!isObject(request.body)) return reply.code(400).send({ error: 'bad_request' });
-    const { token, time, kills } = request.body;
+    const { token, time, kills, won } = request.body;
     // Checked first, and without spending the token, so a player can fix a rejected name.
     const name = cleanScoreName(request.body.name);
     if (!name) return reply.code(422).send({ error: 'invalid_name' });
     const run = runs.take(token);
-    if (!run || !runs.isPlausible(run, time, kills)) return reply.code(403).send({ error: 'invalid_run' });
-    return leaderboard.add(run.map, { name, time: Math.round(time * 100) / 100, kills });
+    if (!run || !runs.isPlausible(run, { time, kills, won })) return reply.code(403).send({ error: 'invalid_run' });
+    return leaderboard.add(run.map, { name, time: Math.round(time * 100) / 100, kills, won });
   });
 
   app.get('/admin', async (request, reply) => reply.sendFile('admin.html'));

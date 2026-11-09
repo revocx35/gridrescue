@@ -134,6 +134,10 @@ input[type="color"] {
   cursor: pointer;
 }
 
+.field-check { display: flex; align-items: center; gap: 8px; grid-column: 1 / -1; min-height: 34px; font-weight: 600; cursor: pointer; }
+.field-check input { width: 20px; height: 20px; accent-color: var(--accent); }
+.char-off .char-side, .char-off .field:not(.field-check) { opacity: 0.45; }
+
 .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
 
 .site-layout { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 12px; align-items: start; }

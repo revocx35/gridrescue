@@ -24,6 +24,28 @@ function poly(ctx, points) {
   ctx.fill();
 }
 
+/** A strike jet from above, nose to the right. */
+function jetArt(body, shade, canopy) {
+  return (c) => {
+    c.fillStyle = shade; poly(c, [[60, 44], [34, 4], [22, 4], [36, 44]]); poly(c, [[60, 56], [34, 96], [22, 96], [36, 56]]);
+    poly(c, [[24, 44], [6, 26], [0, 26], [10, 44]]); poly(c, [[24, 56], [6, 74], [0, 74], [10, 56]]);
+    c.fillStyle = body; poly(c, [[6, 42], [76, 38], [99, 50], [76, 62], [6, 58]]);
+    poly(c, [[78, 42], [68, 26], [62, 26], [66, 42]]); poly(c, [[78, 58], [68, 74], [62, 74], [66, 58]]);
+    c.fillStyle = canopy; tile(c, 66, 44, 20, 12, 5);
+    c.fillStyle = '#ff9a3d'; tile(c, 0, 44, 8, 5, 2); tile(c, 0, 51, 8, 5, 2);
+  };
+}
+
+/** A guided missile from above, nose to the right. */
+function missileArt(body, tip) {
+  return (c) => {
+    c.fillStyle = tip; poly(c, [[76, 40], [99, 50], [76, 60]]);
+    poly(c, [[26, 40], [8, 16], [2, 16], [12, 40]]); poly(c, [[26, 60], [8, 84], [2, 84], [12, 60]]);
+    c.fillStyle = body; tile(c, 8, 40, 72, 20, 4);
+    c.fillStyle = tip; tile(c, 50, 40, 6, 20, 1);
+  };
+}
+
 // Built-in art, drawn in a 100x100 box. Used until the admin uploads a PNG for the role.
 const ART = {
   player(c) {
@@ -94,6 +116,8 @@ const ART = {
     c.fillStyle = '#d3b4ff'; disc(c, 41, 40, 18);
     c.fillStyle = '#fff'; disc(c, 36, 34, 7);
   },
+  jet: jetArt('#7f8fa3', '#566579', '#16283a'),
+  missile: missileArt('#d7dde6', '#ff5b6e'),
 };
 
 // The forest map's own cast.
@@ -152,6 +176,8 @@ const FOREST_ART = {
     c.strokeStyle = '#2c2d2b'; c.lineWidth = 3;
     c.beginPath(); c.moveTo(60, 30); c.lineTo(52, 54); c.lineTo(68, 70); c.stroke();
   },
+  jet: jetArt('#6b7a4e', '#4a5636', '#1c2a1a'),
+  missile: missileArt('#c9c4a6', '#d9772b'),
 };
 
 export function defaultSprite(mapId, role) {
@@ -323,9 +349,12 @@ export class Renderer {
   handleEvent(event) {
     const { accent, accent2 } = this.config.site.colors;
     if (event.type === 'kill') {
-      const look = { enemy1: ['#ff6b78', 26, 7], enemy2: ['#f07ac0', 14, 2], enemy5: ['#c084ff', 60, 12] }[event.kind];
+      const look = { enemy1: ['#ff6b78', 26, 7], enemy2: ['#f07ac0', 14, 2], enemy5: ['#c084ff', 60, 12], jet: ['#ffb347', 70, 14] }[event.kind];
       this.burst(event.x, event.y, look[0], look[1]);
       this.shake = Math.max(this.shake, look[2]);
+    } else if (event.type === 'missileDown') {
+      this.burst(event.x, event.y, '#ffb347', 22, 300);
+      this.shake = Math.max(this.shake, 4);
     } else if (event.type === 'impact') {
       this.burst(event.x, event.y, '#c9b98a', 4, 120);
     } else if (event.type === 'hurt') {
@@ -563,6 +592,47 @@ export class Renderer {
     ctx.restore();
   }
 
+  /** For things seen from above that point where they travel. Altitude moves the shadow away. */
+  #drawHeaded(ctx, role, a, size, altitude) {
+    const sprite = this.sprites[role];
+    const w = sprite.aspect >= 1 ? size : size * sprite.aspect;
+    const h = sprite.aspect >= 1 ? size / sprite.aspect : size;
+    ctx.save();
+    ctx.globalAlpha = 0.3;
+    ctx.translate(a.x + altitude, a.y + altitude);
+    ctx.rotate(a.heading);
+    ctx.drawImage(sprite.flash, -w / 2, -h / 2, w, h);
+    ctx.restore();
+    ctx.save();
+    ctx.translate(a.x, a.y);
+    ctx.rotate(a.heading);
+    ctx.drawImage(sprite.source, -w / 2, -h / 2, w, h);
+    if (a.flash > 0) {
+      ctx.globalAlpha = 0.42;
+      ctx.drawImage(sprite.flash, -w / 2, -h / 2, w, h);
+    }
+    ctx.restore();
+  }
+
+  #drawMissiles(ctx, s) {
+    const { size } = this.config.characters.missile;
+    for (const m of s.missiles) {
+      if (!this.#visible(m)) continue;
+      ctx.fillStyle = '#ffb347';
+      ctx.globalAlpha = 0.75;
+      disc(ctx, m.x - Math.cos(m.heading) * size * 0.55, m.y - Math.sin(m.heading) * size * 0.55, size * (0.14 + Math.random() * 0.1));
+      ctx.globalAlpha = 1;
+      this.#drawHeaded(ctx, 'missile', m, size, 8);
+      // A pulsing ring marks it as something to shoot.
+      ctx.strokeStyle = 'rgba(255,77,94,0.8)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(m.x, m.y, size * 0.62 + Math.sin(this.clock * 10) * 3, 0, TAU);
+      ctx.stroke();
+      this.#miniHealth(ctx, m, m.y - size * 0.8, size, '#ff6b78');
+    }
+  }
+
   #drawOrbs(ctx, s) {
     const { accent } = this.config.site.colors;
     ctx.save();
@@ -672,7 +742,9 @@ export class Renderer {
       this.#drawActor(ctx, 'hostage', { ...s.hostage, face: 1, flash: 0 }, characters.hostage.size, Math.sin(this.clock * 4) * 1.5);
     }
     for (const e of s.enemies) {
-      if (this.#visible(e)) this.#drawActor(ctx, e.kind, e, characters[e.kind].size, walk);
+      if (!this.#visible(e, 200)) continue;
+      if (e.kind === 'jet') this.#drawHeaded(ctx, 'jet', e, e.size, 34);
+      else this.#drawActor(ctx, e.kind, e, e.size, walk);
     }
     if (s.boss.alive && this.#visible(s.boss, 260)) {
       if (s.boss.windup > 0) {
@@ -688,13 +760,15 @@ export class Renderer {
         ctx.stroke();
         ctx.restore();
       }
-      this.#drawActor(ctx, 'boss', s.boss, characters.boss.size);
+      this.#drawActor(ctx, 'boss', s.boss, s.boss.size);
     }
     for (const m of s.companions) {
       if (!m.down) this.#drawActor(ctx, 'companion', m, characters.companion.size, walk * 0.7);
     }
     this.#drawAimLines(ctx, s);
     this.#drawActor(ctx, 'player', s.player, characters.player.size, Math.hypot(s.player.vx, s.player.vy) > 5 ? walk : 0);
+
+    this.#drawMissiles(ctx, s);
 
     for (const p of s.shots) {
       ctx.fillStyle = p.ally ? '#b7f7c4' : accent;
@@ -745,12 +819,12 @@ export class Renderer {
     // Names go last so that no sprite ever covers them.
     for (const e of s.enemies) {
       if (!this.#visible(e)) continue;
-      const size = characters[e.kind].size;
+      const { size } = e;
       this.#miniHealth(ctx, e, e.y - size / 2 - 9, size * 0.8, '#ff6b78');
       this.#label(ctx, characters[e.kind].name, e.x, e.y - size / 2 - 13, 'rgba(255,255,255,0.72)', 11);
     }
     if (s.boss.alive && this.#visible(s.boss, 260)) {
-      this.#label(ctx, characters.boss.name, s.boss.x, s.boss.y - characters.boss.size / 2 - 8, '#ffc247', 15);
+      this.#label(ctx, characters.boss.name, s.boss.x, s.boss.y - s.boss.size / 2 - 8, '#ffc247', 15);
     }
     if (this.#visible(s.hostage)) {
       this.#label(ctx, characters.hostage.name, s.hostage.x, s.hostage.y - characters.hostage.size / 2 - 32, '#ffd9a8', 13);

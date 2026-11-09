@@ -107,6 +107,11 @@ function choiceField(spec, value, onChange) {
   return el('label', { class: 'field' }, el('span', { class: 'micro', textContent: spec.label }), select);
 }
 
+function toggleField(spec, value, onChange) {
+  const input = el('input', { type: 'checkbox', checked: value, on: { change: (e) => onChange(e.target.checked) } });
+  return el('label', { class: 'field-check' }, input, el('span', { textContent: spec.label }));
+}
+
 function textField(label, max, value, onChange, wide = false) {
   const input = el('input', { type: 'text', maxLength: max, value, on: { input: (e) => onChange(e.target.value) } });
   return el('label', { class: `field${wide ? ' block-wide' : ''}` }, el('span', { class: 'micro', textContent: label }), input);
@@ -182,11 +187,16 @@ function characterCard(role) {
   const stats = el('div', { class: 'field-grid' });
   for (const field of ROLE_FIELDS[role]) {
     const spec = CHARACTER_FIELDS[field];
-    const update = (value) => { ch[field] = value; markDirty(); };
-    stats.append(spec.options ? choiceField(spec, ch[field], update) : numberField(spec, ch[field], update));
+    const update = (value) => {
+      ch[field] = value;
+      if (field === 'enabled') card.classList.toggle('char-off', !value);
+      markDirty();
+    };
+    if (spec.boolean) stats.append(toggleField(spec, ch[field], update));
+    else stats.append(spec.options ? choiceField(spec, ch[field], update) : numberField(spec, ch[field], update));
   }
-  return el(
-    'article', { class: 'panel char-card' },
+  const card = el(
+    'article', { class: `panel char-card${ch.enabled === false ? ' char-off' : ''}` },
     side,
     el(
       'div', { class: 'char-fields' },
@@ -195,6 +205,7 @@ function characterCard(role) {
       stats,
     ),
   );
+  return card;
 }
 
 function mapBar() {
@@ -364,7 +375,7 @@ function renderScores(data) {
     const rows = entries.map((entry) => el(
       'li', { class: 'score-row' },
       el('span', { class: 'score-name', textContent: entry.name }),
-      el('span', { class: 'score-stat', textContent: formatRunTime(entry.time) }),
+      el('span', { class: 'score-stat', textContent: `${formatRunTime(entry.time)}${entry.won === false ? ' (died)' : ''}` }),
       el('span', { class: 'score-stat', textContent: `${entry.kills} kills` }),
       el('button', { class: 'btn', type: 'button', textContent: 'Delete', on: { click: () => deleteScore(mapId, entry) } }),
     ));

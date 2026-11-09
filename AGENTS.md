@@ -90,12 +90,18 @@ docker compose up -d --build  # deploy
   security property.
 - Flat configs from before maps become the first map in `Store.upgrade`. The 10/40 XP swap runs only on that flat form, so an
   admin who later picks those values keeps them.
-- `upgradeDamage` is a percentage of base damage and stacks additively (`s.gun.damagePercent`).
+- `upgradeDamage` and `upgradeFireRate` are percentages of the base value and stack additively (`s.gun.*Percent`).
 - `scoreLimits` in `sim.js` must stay true of real play. If spawn pacing, hostage distance or movement changes, update it and
   keep the "score limits" test passing, or real wins get rejected.
 - The page sets `user-select: none`, and global key handlers treat WASD as movement. Any new text input needs
   `user-select: text`, a 16 px font for iOS, and the `closest('input')` guard in `Keyboard`.
 - "Restore defaults" does not touch the leaderboard; only its own admin tab does.
+- Enemy stats are per actor now (`e.size`, `e.damage`, `e.xp`), set at spawn from the current level. Draw and hit-test those,
+  not `characters[kind]`. Tests that build enemies by hand must set them. Speed never scales.
+- The `enabled` switch exists only on roles listed with it in `ROLE_FIELDS`. A map must keep a regular enemy on, because direction
+  hints come from kills. With the boss off, `s.boss.alive` is false from the start and spawning keeps going.
+- Jet and missile images are drawn rotated to their heading, so uploads must face right. Missiles are in `s.missiles`, not
+  `s.enemies`: shooting one down is not a kill.
 - Enemy 5 cannot spawn in the first 40 seconds of a run (`ENEMY5_EARLIEST`). Spawn tests must set `s.time`.
 - Removing or renaming a config option needs a mapping in `Store.upgrade`. A stored value that no longer validates makes
   the whole file count as corrupt, so it gets moved aside and the game falls back to defaults.

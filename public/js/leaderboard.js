@@ -40,7 +40,7 @@ export function formatRunTime(seconds) {
   return `${minutes}:${rest.toFixed(1).padStart(4, '0')}`;
 }
 
-function ranking(title, entries, valueOf, highlightId) {
+function ranking(title, entries, valueOf, highlightId, emptyText) {
   const heading = document.createElement('h3');
   heading.className = 'micro';
   heading.textContent = title;
@@ -65,7 +65,7 @@ function ranking(title, entries, valueOf, highlightId) {
   } else {
     const none = document.createElement('p');
     none.className = 'board-empty';
-    none.textContent = 'No rescues yet';
+    none.textContent = emptyText;
     section.append(none);
   }
   return section;
@@ -73,7 +73,7 @@ function ranking(title, entries, valueOf, highlightId) {
 
 export function renderBoard(host, board, highlightId) {
   host.replaceChildren(
-    ranking('Fastest rescue', board.fastest, (entry) => formatRunTime(entry.time), highlightId),
-    ranking('Most kills', board.kills, (entry) => String(entry.kills), highlightId),
+    ranking('Fastest rescue', board.fastest, (entry) => formatRunTime(entry.time), highlightId, 'No rescues yet'),
+    ranking('Most kills', board.kills, (entry) => String(entry.kills), highlightId, 'No scores yet'),
   );
 }

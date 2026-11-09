@@ -184,7 +184,7 @@ body {
 
 .roster {
   display: grid;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(44px, 1fr));
   gap: 6px;
   margin-bottom: 16px;
 }
@@ -400,7 +400,7 @@ body[data-layout="mobile"] .roster-item canvas { width: 36px; height: 36px; }
 body[data-layout="mobile"] .card { padding: 14px; }
 body[data-layout="mobile"] .card h2 { font-size: 18px; }
 body[data-layout="mobile"] .overlay-text { font-size: 14px; margin-bottom: 10px; }
-body[data-layout="mobile"] .roster { margin-bottom: 10px; }
+body[data-layout="mobile"] .roster { grid-template-columns: repeat(4, minmax(0, 1fr)); margin-bottom: 10px; }
 body[data-layout="mobile"] .controls-hint { display: none; }
 
 /* A phone held sideways has no height to spare: the joystick moves beside the game. */

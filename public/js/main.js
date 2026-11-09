@@ -46,6 +46,7 @@ function buildRoster(config, sprites) {
   const roster = $('roster');
   roster.replaceChildren();
   for (const role of NAMED_ROLES) {
+    if (config.characters[role].enabled === false) continue;
     const item = document.createElement('div');
     item.className = 'roster-item';
     const canvas = document.createElement('canvas');
@@ -197,7 +198,7 @@ class Game {
 
   onKey(e) {
     if (this.mode === 'levelup') {
-      const choice = /^Digit([1-5])$/.exec(e.code);
+      const choice = /^Digit([1-6])$/.exec(e.code);
       if (choice) $('upgrades').children[Number(choice[1]) - 1]?.click();
       return; // Enter and Space act on the focused upgrade; nothing else may restart the game
     }
@@ -237,10 +238,11 @@ class Game {
   }
 
   upgradeLabel(id) {
-    const { upgradeDamage, upgradeHealth } = this.config.gameplay;
+    const { upgradeDamage, upgradeHealth, upgradeFireRate } = this.config.gameplay;
     return {
       pump: 'Change gun to pump',
       damage: `Add ${upgradeDamage}% damage`,
+      fireRate: `Fire ${upgradeFireRate}% faster`,
       health: `Add ${upgradeHealth} health`,
       companion: `Add 1 more ${this.names.companion}`,
       pierce: 'Bullets pass through +1 enemy',
@@ -277,10 +279,11 @@ class Game {
   showMenu() {
     const { site } = this.config;
     const { hostage, boss } = this.names;
+    const ending = this.config.characters.boss.enabled ? `Defeat ${boss} to set them free.` : 'Reach them to set them free.';
     $('controls-hint').textContent = 'Move with WASD or the arrow keys. Attacks fire on their own; hold the mouse button to aim.';
     this.overlay({
       heading: `Rescue ${hostage}`,
-      text: `Keep moving and destroy what chases you. Each kill lights up the way to ${hostage}. Defeat ${boss} to set them free.`,
+      text: `Keep moving and destroy what chases you. Each kill lights up the way to ${hostage}. ${ending}`,
       action: site.startLabel,
       roster: true,
       picker: true,
@@ -330,19 +333,22 @@ class Game {
     const { site } = this.config;
     $('hud').hidden = true;
     $('toast').hidden = true;
-    this.finishedRun = won ? { token: this.runToken, time: this.state.time, kills: this.state.kills } : null;
-    if (won) this.prepareScoreForm();
+    const { time, kills } = this.state;
+    const canSave = won || kills > 0; // a run with no rescue and no kills has nothing to rank
+    this.finishedRun = canSave ? { token: this.runToken, time, kills, won } : null;
+    if (canSave) this.prepareScoreForm(won);
     this.overlay({
       heading: won ? `${this.names.hostage} rescued` : 'Game over',
       text: `${won ? site.winText : site.loseText} Time ${formatTime(this.state.time)}, ${this.state.kills} destroyed.`,
       action: 'Play again',
-      picker: !won, // choosing a map replaces this screen, which would lose the unsaved score
-      score: won,
+      picker: !canSave, // choosing a map replaces this screen, which would lose the unsaved score
+      score: canSave,
       boardButton: true,
     });
   }
 
-  prepareScoreForm() {
+  prepareScoreForm(won) {
+    $('score-label').textContent = won ? 'Your name for the leaderboard' : 'Your name for the kill leaderboard';
     let remembered = '';
     try {
       remembered = localStorage.getItem(NAME_KEY) ?? '';
@@ -366,7 +372,7 @@ class Game {
     $('score-status').textContent = 'Saving…';
     const token = await run.token;
     const result = token
-      ? await postScore({ token, name, time: Math.round(run.time * 100) / 100, kills: run.kills })
+      ? await postScore({ token, name, time: Math.round(run.time * 100) / 100, kills: run.kills, won: run.won })
       : { ok: false, error: 'invalid_run' };
     if (run !== this.finishedRun) return; // the player already started another game
     if (!result.ok) {
@@ -426,6 +432,12 @@ class Game {
       case 'hint':
         if (!this.hintExplained) this.toast(`The light shows the general way to ${hostage}`);
         this.hintExplained = true;
+        break;
+      case 'jet':
+        this.toast(`${this.names.jet} incoming. Shoot down its missiles!`, 3.2);
+        break;
+      case 'difficulty':
+        this.toast(`Difficulty level ${event.level}`);
         break;
       case 'enemy5':
         this.toast(`${this.names.enemy5} has appeared`);
@@ -491,6 +503,7 @@ class Game {
     const need = this.config.gameplay.xpToUpgrade;
     this.setBar('xp-bar', s.xp / need);
     this.setText('xp-text', `${s.xp} / ${need}`);
+    this.setText('stat-level', String(s.level));
     const team = s.companions;
     $('companion-vital').hidden = !team.length;
     if (team.length) {

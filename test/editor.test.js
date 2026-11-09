@@ -41,13 +41,32 @@ describe('config validation', () => {
   rejects('a centred joystick', (c) => { c.site.joystickSide = 'center'; });
   rejects('negative XP', (c) => { c.maps.grid.characters.enemy1.xp = -1; });
   rejects('XP on the boss', (c) => { c.maps.grid.characters.boss.xp = 10; });
+  rejects('a zero fire rate upgrade', (c) => { c.gameplay.upgradeFireRate = 0; });
   rejects('a zero upgrade threshold', (c) => { c.gameplay.xpToUpgrade = 0; });
   rejects('an unknown map', (c) => { c.maps.moon = c.maps.grid; });
   rejects('a missing map', (c) => { delete c.maps.forest; });
   rejects('an empty map name', (c) => { c.maps.forest.name = ' '; });
   rejects('a bad character on the second map', (c) => { c.maps.forest.characters.enemy5.hp = -1; });
+  rejects('a non-boolean switch', (c) => { c.maps.grid.characters.enemy1.enabled = 'yes'; });
+  rejects('a switch on the player', (c) => { c.maps.grid.characters.player.enabled = false; });
+  rejects('a switch on the hostage', (c) => { c.maps.grid.characters.hostage.enabled = false; });
+  rejects('a map with every regular enemy off', (c) => {
+    for (const role of ['enemy1', 'enemy2', 'enemy5']) c.maps.forest.characters[role].enabled = false;
+  });
+  rejects('a negative difficulty increase', (c) => { c.gameplay.difficultyIncrease = -1; });
+  rejects('zero kills per difficulty level', (c) => { c.gameplay.difficultyKills = 0; });
+  rejects('a name on the missile', (c) => { c.maps.grid.characters.missile.name = 'x'; });
   rejects('a name on the ball', (c) => { c.maps.grid.characters.ball.name = 'Ball'; });
   rejects('characters outside a map', (c) => { c.characters = c.maps.grid.characters; });
+
+  it('allows the boss and companion to be off, separately on each map', () => {
+    const config = editable();
+    config.maps.forest.characters.boss.enabled = false;
+    config.maps.forest.characters.companion.enabled = false;
+    const { value } = validateConfig(config);
+    assert.equal(value.maps.forest.characters.boss.enabled, false);
+    assert.equal(value.maps.grid.characters.boss.enabled, true);
+  });
 
   it('trims names', () => {
     const config = editable();
@@ -235,6 +254,13 @@ describe('config upgrades', () => {
     const characters = maps.grid.characters;
     delete characters.enemy5;
     delete characters.ball;
+    delete characters.jet;
+    delete characters.missile;
+    for (const ch of Object.values(characters)) delete ch.enabled;
+    delete gameplay.jetChance;
+    delete gameplay.upgradeFireRate;
+    delete gameplay.difficultyKills;
+    delete gameplay.difficultyIncrease;
     delete gameplay.enemy5Chance;
     site.joystickSide = 'center';
     site.title = 'Saved title';
@@ -264,6 +290,7 @@ describe('config upgrades', () => {
     assert.equal(player.name, 'Saved name');
     assert.equal(player.sprite, 'a'.repeat(64));
     assert.equal(enemy5.fireInterval, 3);
+    assert.equal(enemy5.enabled, true);
     assert.equal(ball.sprite, null);
     assert.equal(config.gameplay.enemy5Chance, defaultConfig().gameplay.enemy5Chance);
   });

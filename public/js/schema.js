@@ -4,10 +4,10 @@
 
 export const MAPS = ['grid', 'forest'];
 
-export const ROLES = ['player', 'companion', 'hostage', 'enemy1', 'enemy2', 'boss', 'enemy5', 'ball'];
+export const ROLES = ['player', 'companion', 'hostage', 'enemy1', 'enemy2', 'boss', 'enemy5', 'ball', 'jet', 'missile'];
 
-/** Everything except the ball, which is a projectile with a texture and no name. */
-export const NAMED_ROLES = ROLES.filter((role) => role !== 'ball');
+/** Everything except projectiles, which have a texture and no name. */
+export const NAMED_ROLES = ROLES.filter((role) => role !== 'ball' && role !== 'missile');
 
 export const ROLE_LABELS = {
   player: 'Player',
@@ -18,21 +18,28 @@ export const ROLE_LABELS = {
   boss: 'Enemy 3 (boss)',
   enemy5: 'Enemy 5 (strongest, rarest)',
   ball: 'Enemy 5 large ball',
+  jet: 'Su-34 (image facing right)',
+  missile: 'Kh-29 missile (image facing right)',
 };
 
 const COMBAT = ['size', 'hp', 'speed', 'damage'];
 export const ROLE_FIELDS = {
   player: [...COMBAT, 'fireInterval'],
-  companion: [...COMBAT, 'fireInterval'],
+  companion: ['enabled', ...COMBAT, 'fireInterval'],
   hostage: ['size'],
-  enemy1: [...COMBAT, 'xp', 'attackType'],
-  enemy2: [...COMBAT, 'xp', 'attackType'],
-  boss: [...COMBAT, 'attackType'],
-  enemy5: [...COMBAT, 'xp', 'fireInterval'],
+  enemy1: ['enabled', ...COMBAT, 'xp', 'attackType'],
+  enemy2: ['enabled', ...COMBAT, 'xp', 'attackType'],
+  boss: ['enabled', ...COMBAT, 'attackType'],
+  enemy5: ['enabled', ...COMBAT, 'xp', 'fireInterval'],
   ball: ['size', 'speed', 'damage'],
+  jet: ['enabled', 'size', 'hp', 'speed', 'xp', 'fireInterval'],
+  missile: ['size', 'hp', 'speed', 'damage'],
 };
 
+const REGULAR_ENEMIES = ['enemy1', 'enemy2', 'enemy5'];
+
 export const CHARACTER_FIELDS = {
+  enabled: { label: 'On this map', boolean: true },
   size: { label: 'Size (px)', min: 16, max: 220, step: 1 },
   hp: { label: 'Health', min: 1, max: 100000, step: 1 },
   speed: { label: 'Speed', min: 0, max: 800, step: 1 },
@@ -55,12 +62,16 @@ export const GAMEPLAY_FIELDS = {
   spawnInterval: { label: 'Seconds between enemy spawns', min: 0.1, max: 20, step: 0.05 },
   enemy1Chance: { label: 'Chance a spawn is Enemy 1 (0 to 1)', min: 0, max: 1, step: 0.01 },
   enemy5Chance: { label: 'Chance a spawn is Enemy 5 (0 to 1)', min: 0, max: 1, step: 0.01 },
+  jetChance: { label: 'Chance a spawn is the Su-34 (0 to 1)', min: 0, max: 1, step: 0.001 },
+  difficultyKills: { label: 'Kills per difficulty level', min: 1, max: 10000, step: 1 },
+  difficultyIncrease: { label: 'Enemy stat increase per level (%)', min: 0, max: 1000, step: 1 },
   maxEnemies: { label: 'Most enemies at once', min: 1, max: 120, step: 1 },
   attackRange: { label: 'Auto-attack range', min: 100, max: 1500, step: 10 },
   arenaRadius: { label: 'Boss arena radius', min: 250, max: 2000, step: 10 },
   xpToUpgrade: { label: 'XP needed for each upgrade', min: 1, max: 100000, step: 1 },
   upgradeDamage: { label: 'Damage upgrade (% of base damage)', min: 1, max: 5000, step: 1 },
   upgradeHealth: { label: 'Health added by the upgrade', min: 1, max: 100000, step: 1 },
+  upgradeFireRate: { label: 'Fire rate upgrade (% faster)', min: 1, max: 1000, step: 1 },
 };
 
 export const SITE_TEXT_FIELDS = {
@@ -104,11 +115,11 @@ export const MAX_MAP_NAME_LENGTH = 32;
 const NAMES = {
   grid: {
     map: 'The Grid', player: 'Runner', companion: 'Scout', hostage: 'Hostage',
-    enemy1: 'Brute', enemy2: 'Stalker', boss: 'Warden', enemy5: 'Overseer',
+    enemy1: 'Brute', enemy2: 'Stalker', boss: 'Warden', enemy5: 'Overseer', jet: 'Su-34',
   },
   forest: {
     map: 'Burnt Forest', player: 'Ranger', companion: 'Hound', hostage: 'Pilot',
-    enemy1: 'Ironback', enemy2: 'Scavenger', boss: 'Tank Lord', enemy5: 'Colossus',
+    enemy1: 'Ironback', enemy2: 'Scavenger', boss: 'Tank Lord', enemy5: 'Colossus', jet: 'Su-34',
   },
 };
 
@@ -116,13 +127,15 @@ function defaultCharacters(map) {
   const names = NAMES[map];
   return {
     player: { name: names.player, sprite: null, size: 46, hp: 100, speed: 255, damage: 18, fireInterval: 0.26 },
-    companion: { name: names.companion, sprite: null, size: 40, hp: 80, speed: 285, damage: 10, fireInterval: 0.4 },
+    companion: { name: names.companion, sprite: null, enabled: true, size: 40, hp: 80, speed: 285, damage: 10, fireInterval: 0.4 },
     hostage: { name: names.hostage, sprite: null, size: 44 },
-    enemy1: { name: names.enemy1, sprite: null, size: 62, hp: 130, speed: 135, damage: 20, xp: 40, attackType: 'melee' },
-    enemy2: { name: names.enemy2, sprite: null, size: 36, hp: 32, speed: 180, damage: 8, xp: 10, attackType: 'melee' },
-    boss: { name: names.boss, sprite: null, size: 118, hp: 1500, speed: 120, damage: 13, attackType: 'pump' },
-    enemy5: { name: names.enemy5, sprite: null, size: 96, hp: 650, speed: 90, damage: 30, xp: 150, fireInterval: 3 },
+    enemy1: { name: names.enemy1, sprite: null, enabled: true, size: 62, hp: 130, speed: 135, damage: 20, xp: 40, attackType: 'melee' },
+    enemy2: { name: names.enemy2, sprite: null, enabled: true, size: 36, hp: 32, speed: 180, damage: 8, xp: 10, attackType: 'melee' },
+    boss: { name: names.boss, sprite: null, enabled: true, size: 118, hp: 1500, speed: 120, damage: 13, attackType: 'pump' },
+    enemy5: { name: names.enemy5, sprite: null, enabled: true, size: 96, hp: 650, speed: 90, damage: 30, xp: 150, fireInterval: 3 },
     ball: { sprite: null, size: 92, speed: 260, damage: 35 },
+    jet: { name: names.jet, sprite: null, enabled: true, size: 120, hp: 260, speed: 430, xp: 100, fireInterval: 1.4 },
+    missile: { sprite: null, size: 46, hp: 30, speed: 300, damage: 40 },
   };
 }
 
@@ -166,12 +179,16 @@ export function defaultConfig() {
       spawnInterval: 1.15,
       enemy1Chance: 0.14,
       enemy5Chance: 0.04,
+      jetChance: 0.015,
+      difficultyKills: 25,
+      difficultyIncrease: 10,
       maxEnemies: 36,
       attackRange: 450,
       arenaRadius: 560,
       xpToUpgrade: 200,
       upgradeDamage: 20,
       upgradeHealth: 20,
+      upgradeFireRate: 20,
     },
   };
 }
@@ -236,7 +253,10 @@ function readCharacters(input, path, errors) {
     const clean = named ? { name: readText(ch.name, `${where}.name`, MAX_NAME_LENGTH, true, errors) } : {};
     for (const field of ROLE_FIELDS[role]) {
       const spec = CHARACTER_FIELDS[field];
-      if (spec.options) {
+      if (spec.boolean) {
+        if (typeof ch[field] !== 'boolean') errors.push(`${where}.${field}: must be on or off`);
+        clean[field] = ch[field];
+      } else if (spec.options) {
         if (!spec.options.includes(ch[field])) errors.push(`${where}.${field}: invalid choice`);
         clean[field] = ch[field];
       } else {
@@ -244,6 +264,10 @@ function readCharacters(input, path, errors) {
       }
     }
     out[role] = clean;
+  }
+  // Direction hints come from kills, so a map with nothing to kill could never be finished.
+  if (!REGULAR_ENEMIES.some((role) => out[role].enabled !== false)) {
+    errors.push(`${path}: keep at least one of Enemy 1, Enemy 2 or Enemy 5 on`);
   }
   return out;
 }

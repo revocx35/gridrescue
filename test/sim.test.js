@@ -28,7 +28,7 @@ const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 
 function placeEnemy(s, kind, x, y) {
   const ch = s.cfg.characters[kind];
-  const e = { x, y, vx: 0, vy: 0, hp: ch.hp, maxHp: ch.hp, r: ch.size * 0.42, cool: 0, flash: 0, face: 1, kind, speed: ch.speed, damage: ch.damage };
+  const e = { x, y, vx: 0, vy: 0, hp: ch.hp, maxHp: ch.hp, r: ch.size * 0.42, cool: 0, flash: 0, face: 1, kind, size: ch.size, xp: ch.xp, speed: ch.speed, damage: ch.damage };
   s.enemies.push(e);
   return e;
 }
@@ -392,7 +392,7 @@ describe('enemy attack types', () => {
   });
 
   it('spawned enemies use the attack type set by the admin', () => {
-    const s = game(3, (c) => { c.characters.enemy2.attackType = 'sniper'; c.gameplay.enemy1Chance = 0; c.gameplay.enemy5Chance = 0; });
+    const s = game(3, (c) => { c.characters.enemy2.attackType = 'sniper'; c.gameplay.enemy1Chance = 0; c.gameplay.enemy5Chance = 0; c.gameplay.jetChance = 0; });
     s.spawnT = 0;
     step(s, DT, still);
     assert.equal(s.enemies[0].attack, 'sniper');
@@ -531,8 +531,46 @@ describe('XP and upgrades', () => {
     assert.equal(s.xp, 50);
   });
 
-  it('offers all five upgrades', () => {
-    assert.deepEqual(availableUpgrades(quiet()).sort(), ['companion', 'damage', 'health', 'pierce', 'pump']);
+  it('offers all six upgrades', () => {
+    assert.deepEqual(availableUpgrades(quiet()).sort(), ['companion', 'damage', 'fireRate', 'health', 'pierce', 'pump']);
+  });
+
+  it('a fire rate upgrade shortens the time between shots, and stacks', () => {
+    const s = quiet();
+    const base = s.cfg.characters.player.fireInterval;
+    levelUp(s);
+    applyUpgrade(s, 'fireRate');
+    step(s, DT, { x: 0, y: 0, aimX: 1, aimY: 0 });
+    assert.ok(Math.abs(s.player.cool - base / 1.2) < 1e-9);
+    levelUp(s);
+    applyUpgrade(s, 'fireRate');
+    s.player.cool = 0;
+    step(s, DT, { x: 0, y: 0, aimX: 1, aimY: 0 });
+    assert.ok(Math.abs(s.player.cool - base / 1.4) < 1e-9);
+  });
+
+  it('a fire rate upgrade uses the admin-set amount and also speeds up the pump', () => {
+    const s = quiet((c) => { c.gameplay.upgradeFireRate = 100; });
+    levelUp(s);
+    applyUpgrade(s, 'pump');
+    step(s, DT, { x: 0, y: 0, aimX: 1, aimY: 0 });
+    const pumpCool = s.player.cool;
+    levelUp(s);
+    applyUpgrade(s, 'fireRate');
+    s.player.cool = 0;
+    step(s, DT, { x: 0, y: 0, aimX: 1, aimY: 0 });
+    assert.ok(Math.abs(s.player.cool - pumpCool / 2) < 1e-9);
+  });
+
+  it('a fire rate upgrade leaves companions alone', () => {
+    const s = quiet((c) => { c.gameplay.companionKills = 0; });
+    step(s, DT, still);
+    levelUp(s);
+    applyUpgrade(s, 'fireRate');
+    s.player.cool = 1e9;
+    placeEnemy(s, 'enemy2', s.companions[0].x + 100, s.companions[0].y).speed = 0;
+    for (let i = 0; i < 40 && !s.shots.length; i++) step(s, DT, still);
+    assert.ok(Math.abs(s.companions[0].cool - (s.cfg.characters.companion.fireInterval - DT * 0)) < 0.05);
   });
 
   it('refuses a choice when no menu is open, or one not on offer', () => {
@@ -915,6 +953,269 @@ describe('maps', () => {
     }
     assert.ok(wins >= 3, results.join(' '));
     console.log('forest bot results', results.join(' '));
+  });
+});
+
+describe('turning characters off', () => {
+  const spawnKinds = (edit, time = 200) => {
+    const s = game(4, (c) => { c.gameplay.maxEnemies = 1e6; c.gameplay.spawnInterval = 0.1; edit(c); });
+    s.time = time;
+    s.player.hp = s.player.maxHp = 1e9;
+    s.cfg.characters.player.damage = 0;
+    const seen = new Set();
+    for (let i = 0; i < 60 * 40; i++) {
+      step(s, DT, still);
+      for (const e of s.enemies) seen.add(e.kind);
+      s.enemies.length = 0;
+    }
+    return seen;
+  };
+
+  for (const kind of ['enemy1', 'enemy2', 'enemy5', 'jet']) {
+    it(`never spawns ${kind} when it is off`, () => {
+      assert.equal(spawnKinds((c) => { c.characters[kind].enabled = false; c.gameplay.jetChance = 0.2; c.gameplay.enemy5Chance = 0.2; c.gameplay.enemy1Chance = 0.2; }).has(kind), false);
+    });
+  }
+
+  it('still spawns when only the rare enemy is left on', () => {
+    const seen = spawnKinds((c) => { c.characters.enemy2.enabled = false; c.characters.enemy5.enabled = false; c.gameplay.enemy1Chance = 0.01; });
+    assert.ok(seen.has('enemy1'));
+  });
+
+  it('with the boss off the hostage can be reached at once, and enemies keep coming', () => {
+    const s = game(2, (c) => { c.characters.boss.enabled = false; });
+    assert.equal(s.boss.alive, false);
+    s.spawnT = 0;
+    step(s, DT, still);
+    assert.ok(s.enemies.length > 0);
+    s.player.x = s.hostage.x;
+    s.player.y = s.hostage.y;
+    step(s, DT, still);
+    assert.equal(s.status, 'won');
+  });
+
+  it('with the companion off none joins and the upgrade is not offered', () => {
+    const s = game(2, (c) => { c.characters.companion.enabled = false; c.gameplay.companionKills = 0; });
+    s.spawnT = 1e9;
+    for (let i = 0; i < 30; i++) step(s, DT, still);
+    assert.equal(s.companions.length, 0);
+    assert.equal(availableUpgrades(s).includes('companion'), false);
+  });
+});
+
+describe('difficulty levels', () => {
+  const quiet = (edit) => {
+    const s = game(1, (c) => { c.gameplay.difficultyKills = 2; c.gameplay.difficultyIncrease = 50; edit?.(c); });
+    s.spawnT = 1e9;
+    return s;
+  };
+  const killOne = (s) => {
+    const e = placeEnemy(s, 'enemy2', 120, 0);
+    e.hp = 1;
+    e.speed = 0;
+    for (let i = 0; i < 60 && s.enemies.includes(e); i++) step(s, DT, still);
+  };
+  const spawn = (s, kind, chance) => {
+    s.cfg.gameplay.enemy1Chance = chance;
+    s.spawnT = 0;
+    step(s, DT, still);
+    s.spawnT = 1e9;
+    return s.enemies.at(-1);
+  };
+
+  it('starts at level 1 and rises every set number of kills', () => {
+    const s = quiet();
+    assert.equal(s.level, 1);
+    killOne(s);
+    assert.equal(s.level, 1);
+    killOne(s);
+    assert.equal(s.level, 2);
+    assert.ok(s.events.some((e) => e.type === 'difficulty' && e.level === 2));
+  });
+
+  it('new enemies gain every stat except speed', () => {
+    const s = quiet((c) => { c.gameplay.jetChance = 0; c.gameplay.enemy5Chance = 0; });
+    s.level = 3;
+    const ch = s.cfg.characters.enemy1;
+    const e = spawn(s, 'enemy1', 1);
+    assert.equal(e.maxHp, ch.hp * 2);
+    assert.equal(e.damage, ch.damage * 2);
+    assert.equal(e.size, ch.size * 2);
+    assert.equal(e.xp, ch.xp * 2);
+    assert.ok(e.speed <= ch.speed * 1.08);
+  });
+
+  it('stops growing a character at the largest allowed size', () => {
+    const s = quiet((c) => { c.gameplay.jetChance = 0; c.gameplay.enemy5Chance = 0; });
+    s.level = 100;
+    assert.equal(spawn(s, 'enemy1', 1).size, 220);
+  });
+
+  it('leaves the admin settings untouched', () => {
+    const s = quiet();
+    const before = s.cfg.characters.enemy1.hp;
+    killOne(s);
+    killOne(s);
+    assert.equal(s.cfg.characters.enemy1.hp, before);
+  });
+
+  it('brings the boss up to the level, keeping its share of health', () => {
+    const s = quiet();
+    s.boss.hp = s.boss.maxHp / 2;
+    killOne(s);
+    killOne(s);
+    assert.equal(s.boss.maxHp, s.cfg.characters.boss.hp * 1.5);
+    assert.equal(s.boss.hp, s.boss.maxHp / 2);
+    assert.equal(s.boss.size, s.cfg.characters.boss.size * 1.5);
+  });
+
+  it('an increase of zero changes nothing', () => {
+    const s = quiet((c) => { c.gameplay.difficultyIncrease = 0; c.gameplay.jetChance = 0; c.gameplay.enemy5Chance = 0; });
+    s.level = 9;
+    assert.equal(spawn(s, 'enemy1', 1).maxHp, s.cfg.characters.enemy1.hp);
+  });
+});
+
+describe('Su-34 and Kh-29', () => {
+  function withJet(edit) {
+    const s = game(1, (c) => { c.gameplay.jetChance = 1; edit?.(c); });
+    s.time = 61;
+    s.spawnT = 0;
+    s.cfg.characters.player.damage = 0;
+    s.player.hp = s.player.maxHp = 1e9;
+    step(s, DT, still);
+    s.spawnT = 1e9;
+    return { s, jet: s.enemies.find((e) => e.kind === 'jet') };
+  }
+  const onlyMissile = (edit) => {
+    const { s, jet } = withJet(edit);
+    s.enemies.length = 0;
+    s.missiles.length = 0;
+    const ch = s.cfg.characters.missile;
+    const m = { x: 300, y: 0, vx: -ch.speed, vy: 0, heading: Math.PI, flash: 0, hp: ch.hp, maxHp: ch.hp, r: ch.size * 0.42, damage: ch.damage, ttl: 8 };
+    s.missiles.push(m);
+    return { s, m, jet };
+  };
+
+  it('is very rare and never in the opening of a run', () => {
+    const { gameplay } = defaultConfig();
+    assert.ok(gameplay.jetChance < gameplay.enemy5Chance);
+    const s = game(1, (c) => { c.gameplay.jetChance = 1; });
+    s.spawnT = 0;
+    step(s, DT, still);
+    assert.equal(s.enemies.some((e) => e.kind === 'jet'), false);
+  });
+
+  it('flies past in a straight line at full speed, then leaves', () => {
+    const { s, jet } = withJet();
+    const start = { x: jet.x, y: jet.y };
+    for (let i = 0; i < 60; i++) step(s, DT, still);
+    assert.ok(Math.abs(dist(jet, start) - s.cfg.characters.jet.speed) < 20);
+    for (let i = 0; i < 60 * 31; i++) step(s, DT, still);
+    assert.equal(s.enemies.includes(jet), false);
+  });
+
+  it('only one is in the air at a time', () => {
+    const { s } = withJet();
+    for (let i = 0; i < 5; i++) { s.spawnT = 0; step(s, DT, still); }
+    assert.equal(s.enemies.filter((e) => e.kind === 'jet').length, 1);
+  });
+
+  it('launches missiles once in view', () => {
+    const { s } = withJet();
+    assert.equal(s.missiles.length, 0);
+    for (let i = 0; i < 60 * 3 && !s.missiles.length; i++) step(s, DT, still);
+    assert.ok(s.missiles.length > 0);
+  });
+
+  it('can be destroyed for its XP', () => {
+    const { s, jet } = withJet();
+    jet.hp = 1;
+    s.shots.push({ x: jet.x, y: jet.y, vx: 0, vy: 0, ttl: 1, damage: 5 });
+    step(s, DT, still);
+    assert.equal(s.kills, 1);
+    assert.equal(s.orbs[0].xp, s.cfg.characters.jet.xp);
+  });
+
+  it('a missile turns to follow the player', () => {
+    const { s, m } = onlyMissile();
+    m.heading = 0;
+    s.player.y = 0;
+    const offCourse = Math.abs(Math.atan2(Math.sin(Math.PI - m.heading), Math.cos(Math.PI - m.heading)));
+    for (let i = 0; i < 30; i++) step(s, DT, still);
+    assert.ok(Math.abs(Math.atan2(Math.sin(Math.PI - m.heading), Math.cos(Math.PI - m.heading))) < offCourse);
+  });
+
+  it('a missile cannot be outrun in a straight line by default', () => {
+    const { missile, player } = mapConfig(defaultConfig(), 'grid').characters;
+    assert.ok(missile.speed > player.speed);
+  });
+
+  it('a missile that arrives hurts and is spent', () => {
+    const { s, m } = onlyMissile();
+    m.x = 5;
+    step(s, DT, still);
+    assert.equal(s.player.maxHp - s.player.hp, m.damage);
+    assert.equal(s.missiles.length, 0);
+  });
+
+  it('can be shot down, without counting as a kill', () => {
+    const { s, m } = onlyMissile();
+    m.hp = 1;
+    s.shots.push({ x: m.x, y: m.y, vx: 0, vy: 0, ttl: 1, damage: 5 });
+    step(s, DT, still);
+    assert.equal(s.missiles.length, 0);
+    assert.equal(s.kills, 0);
+    assert.equal(s.player.hp, s.player.maxHp);
+  });
+
+  it('takes more than one ordinary shot by default', () => {
+    const { missile, player } = mapConfig(defaultConfig(), 'grid').characters;
+    assert.ok(missile.hp > player.damage);
+  });
+
+  it('auto-aim goes for a missile before a closer enemy', () => {
+    const { s, m } = onlyMissile((c) => { c.characters.player.damage = 18; });
+    m.x = 300;
+    m.vx = 0;
+    placeEnemy(s, 'enemy2', 0, -220).speed = 0;
+    step(s, DT, still);
+    assert.ok(s.shots[0].vx > 0 && Math.abs(s.shots[0].vy) < Math.abs(s.shots[0].vx));
+  });
+
+  it('runs out of fuel', () => {
+    const { s, m } = onlyMissile();
+    m.ttl = 0.01;
+    m.x = 900;
+    step(s, DT, still);
+    step(s, DT, still);
+    assert.equal(s.missiles.length, 0);
+    assert.equal(s.player.hp, s.player.maxHp);
+  });
+
+  it('missiles get tougher with difficulty, but no faster', () => {
+    const { s, jet } = withJet((c) => { c.gameplay.difficultyIncrease = 100; });
+    s.level = 2;
+    for (let i = 0; i < 60 * 3 && !s.missiles.length; i++) step(s, DT, still);
+    const [m] = s.missiles;
+    const ch = s.cfg.characters.missile;
+    assert.ok(jet);
+    assert.equal(m.maxHp, ch.hp * 2);
+    assert.equal(m.damage, ch.damage * 2);
+    step(s, DT, still);
+    assert.ok(Math.abs(Math.hypot(m.vx, m.vy) - ch.speed) < 1e-6);
+  });
+
+  it('missiles vanish when the boss falls', () => {
+    const { s } = onlyMissile();
+    s.player.x = s.hostage.x + 400;
+    s.player.y = s.hostage.y;
+    s.missiles[0].x = s.player.x + 900;
+    s.boss.hp = 1;
+    s.boss.mode = 'fight';
+    s.shots.push({ x: s.boss.x, y: s.boss.y, vx: 0, vy: 0, ttl: 1, damage: 10 });
+    step(s, DT, still);
+    assert.equal(s.missiles.length, 0);
   });
 });
 

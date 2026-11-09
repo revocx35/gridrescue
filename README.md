@@ -7,11 +7,13 @@ joystick on phones.
 Nobody needs an account to play. An admin signs in through [Authentik](https://goauthentik.io/) to edit the game:
 
 - two maps, each with its own name and its own full cast: name and image for the player, companion, hostage, enemy 1,
-  enemy 2, enemy 3 (the boss) and enemy 5, plus the texture of enemy 5's large ball
+  enemy 2, enemy 3 (the boss), enemy 5 and the Su-34, plus the textures of enemy 5's large ball and the Kh-29 missile
+- which characters appear on each map: everything but the player and hostage can be switched off
 - the site menu: game title, tagline, button and end-screen text, colours, page order for desktop and mobile,
   joystick size and which side the movement stick is on
 - each enemy's attack type: melee, sniper (one bullet) or pump (spread)
-- XP dropped by each enemy, XP needed per upgrade, the damage upgrade's percentage and the health upgrade's amount
+- XP dropped by each enemy, XP needed per upgrade, the size of the damage, fire rate and health upgrades
+- how many kills raise the difficulty level and how much each level strengthens enemies
 - the leaderboard: delete single scores or clear a map
 - gameplay numbers: health, speed, damage, spawn rates, how far away the hostage is and how wide the hint is
 
@@ -24,10 +26,12 @@ Nobody needs an account to play. An admin signs in through [Authentik](https://g
 | Find the hostage | Every enemy you destroy briefly lights a wedge of the grid. The hostage is somewhere inside it |
 | Maps | Choose on the start screen. The Grid is open floor; the forest map is full of trees and exploded tanks that block movement and bullets |
 | Enemy 5 | The strongest and rarest enemy. Throws a large ball every 3 seconds that rolls through cover |
+| Su-34 | Very rare. Crosses the screen firing guided Kh-29 missiles, which chase you until they are shot down or run out of fuel |
+| Difficulty | Every 25 kills raises the level. Enemies gain 10% health, damage, size and XP per level, but no speed |
 | Companion | Joins after enough kills, or as you get close to the hostage, whichever comes first |
-| Upgrades | Destroyed enemies drop XP. Every 200 XP the game freezes and you pick one: pump gun, 20% more damage, more health, one more companion, or bullets that pass through one more enemy |
+| Upgrades | Destroyed enemies drop XP. Every 200 XP the game freezes and you pick one: pump gun, 20% more damage, 20% faster firing, more health, one more companion, or bullets that pass through one more enemy |
 | Win | Defeat the boss, then reach the hostage |
-| Leaderboard | After a win, enter a name to join the global tables for that map: fastest rescue and most kills |
+| Leaderboard | Enter a name when a run ends to join the global tables for that map. Wins count for fastest rescue and most kills; deaths with at least one kill count for most kills |
 
 ## Run it
 
