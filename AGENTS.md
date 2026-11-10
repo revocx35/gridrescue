@@ -39,7 +39,7 @@ compose.yaml, Dockerfile           Hardened deployment
 
 ```sh
 npm ci                        # install
-npm test                      # all tests (443): rules, modes, editor, PNG, audio, auth, real OIDC client against a local issuer
+npm test                      # all tests (448): rules, modes, editor, PNG, audio, auth, real OIDC client against a local issuer
 npm start                     # plain HTTP unless TLS_* is set; needs PUBLIC_URL for sign-in
 scripts/setup.sh IP:x.x.x.x   # once per checkout
 docker compose up -d --build  # deploy
@@ -60,6 +60,7 @@ docker compose up -d --build  # deploy
 - A new button on the overlay needs adding to the `closest` guard in `Game.onKey`, or Enter and Space on it also start a run.
 - Only `Game.onShopKey` may handle keys while the shop is open: Enter must never reach the restart path. B opens it only in `playing`, so it cannot fire while typing a leaderboard name.
 - Shop items are declared in `SHOP_SECTIONS` in `sim.js`, take effect in `applyUpgrade`, and get their words from `shopLabel` in `main.js`. Add new ones in all three. Their amounts are `GAMEPLAY_FIELDS`, so the admin can edit them.
+- Auto-buy goes through `applyUpgrade` only (`spendAutoBuy`), so an item's rules and locks hold for it too. Each child of `#upgrades` is a row holding the buy button (`.upgrade`) and its Auto switch (`.upgrade-auto`); digit keys and the shop's first focus look for `.upgrade`, never a bare `button`. Auto purchases emit `autoBought` instead of `upgradeReady` when no point is left.
 - A game runs on `mapConfig(config, mapId)`: shared `site` and `gameplay` plus one map's `characters`. Never read
   `config.characters`; it no longer exists at the top level.
 - `ball` is a role with a texture and stats but no name. Use `NAMED_ROLES` wherever a name is shown or validated.

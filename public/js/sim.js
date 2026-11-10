@@ -43,6 +43,7 @@ export const SHOP_SECTIONS = [
   { id: 'defense', items: ['health', 'regen', 'laser', 'laserRate', 'laserRange', 'laserBeams'] },
   { id: 'companions', items: ['companion', 'companion2', 'companionDamage', 'companionFireRate', 'companionHealth'] },
 ];
+export const SHOP_ITEMS = SHOP_SECTIONS.flatMap((section) => section.items);
 const NEEDS_LASER = new Set(['laserRate', 'laserRange', 'laserBeams']);
 const NEEDS_COMPANION = new Set(['companionDamage', 'companionFireRate', 'companionHealth']);
 
@@ -119,6 +120,7 @@ export function createGame(cfg, { rng = Math.random, view = { halfW: 500, halfH:
     laser: null, // the personal laser, once bought
     upgradePoints: 0,
     bought: {}, // how many of each shop item this run
+    autoBuy: [], // shop items the player set to buy themselves, in the order they were switched on
     naturalCompanion: false,
     hostage, boss,
     enemies: [], shots: [], bullets: [], orbs: [], missiles: [],
@@ -930,7 +932,8 @@ function bankUpgradePoints(s) {
   const earned = Math.floor(s.xp / need);
   s.xp -= earned * need;
   s.upgradePoints += earned;
-  emit(s, 'upgradeReady');
+  spendAutoBuy(s);
+  if (s.upgradePoints) emit(s, 'upgradeReady');
 }
 
 function updateOrbs(s, dt) {
@@ -1015,6 +1018,31 @@ export function applyUpgrade(s, id) {
   s.upgradePoints -= 1;
   s.bought[id] = (s.bought[id] ?? 0) + 1;
   return true;
+}
+
+/** Switches automatic buying of one shop item on or off. Returns false for an item the shop does not have. */
+export function setAutoBuy(s, id, on) {
+  if (!SHOP_ITEMS.includes(id)) return false;
+  s.autoBuy = s.autoBuy.filter((item) => item !== id);
+  if (on) s.autoBuy.push(id);
+  return true;
+}
+
+/**
+ * Spends banked points on the items set to auto, as long as one of them is on offer. Each point goes to the
+ * auto item bought least often so far, so several auto items grow evenly. Returns what was bought.
+ */
+export function spendAutoBuy(s) {
+  const bought = [];
+  while (s.upgradePoints >= 1) {
+    const ready = availableUpgrades(s).filter((id) => s.autoBuy.includes(id));
+    if (!ready.length) break;
+    const id = ready.reduce((best, item) => ((s.bought[item] ?? 0) < (s.bought[best] ?? 0) ? item : best));
+    if (!applyUpgrade(s, id)) break;
+    bought.push(id);
+  }
+  if (bought.length) emit(s, 'autoBought', { ids: bought });
+  return bought;
 }
 
 function updateRescue(s) {

@@ -2,6 +2,15 @@
 // Every release adds an entry here; a test compares the newest one with package.json.
 export const PATCH_NOTES = [
   {
+    version: '1.19.0',
+    date: '2026-11-10',
+    changes: [
+      'Every item in the upgrade shop now has an Auto button. Items set to Auto are bought by themselves as soon as you have a point, without stopping the game.',
+      'With several items on Auto, points are shared out evenly between them. Your Auto choices are remembered for the next run.',
+      'On a keyboard, Shift and the item\'s number switch Auto on or off.',
+    ],
+  },
+  {
     version: '1.18.0',
     date: '2026-11-09',
     changes: ['Added these patch notes to the start and end screens.'],

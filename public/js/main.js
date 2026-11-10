@@ -5,7 +5,7 @@ import { PATCH_NOTES } from './patch-notes.js';
 import { Renderer, drawSpriteInBox, loadSprites } from './render.js';
 import { GAME_MODES, MAPS, MAX_SCORE_NAME_LENGTH, NAMED_ROLES, mapConfig } from './schema.js';
 import { SoundBoard } from './sound.js';
-import { applyUpgrade, createGame, destroyMissileAt, frameSeconds, shopSections, step } from './sim.js';
+import { SHOP_ITEMS, applyUpgrade, createGame, destroyMissileAt, frameSeconds, setAutoBuy, shopSections, spendAutoBuy, step } from './sim.js';
 
 const FIXED_STEP = 1 / 60;
 const NAME_KEY = 'gridrescue-name';
@@ -13,6 +13,7 @@ const MAP_KEY = 'gridrescue-map';
 const MODE_KEY = 'gridrescue-mode';
 const AIM_BOSS_KEY = 'gridrescue-aim-boss';
 const AIM_BOSS_CHOICES = ['off', 'on'];
+const AUTO_BUY_KEY = 'gridrescue-auto-buy';
 // How far from a missile a press still counts, in CSS pixels. Fingers are less exact than a cursor.
 const MISSILE_REACH = { touch: 44, mouse: 28 };
 const $ = (id) => document.getElementById(id);
@@ -39,6 +40,15 @@ function recall(key, options) {
     if (options.includes(stored)) return stored;
   } catch { /* private browsing */ }
   return options[0];
+}
+
+/** A stored list of choices, keeping only the ones that are still valid. */
+function recallList(key, options) {
+  try {
+    const stored = JSON.parse(localStorage.getItem(key) ?? '[]');
+    if (Array.isArray(stored)) return [...new Set(stored.filter((item) => options.includes(item)))];
+  } catch { /* private browsing or a damaged value */ }
+  return [];
 }
 
 function applyOrder(site) {
@@ -182,6 +192,7 @@ class Game {
     this.loadMapSprites = loadMapSprites;
     this.gameMode = recall(MODE_KEY, GAME_MODES);
     this.aimBoss = recall(AIM_BOSS_KEY, AIM_BOSS_CHOICES) === 'on';
+    this.autoBuy = recallList(AUTO_BUY_KEY, SHOP_ITEMS); // carried from run to run
     this.sounds = new SoundBoard();
     this.useMap(mapId, sprites, true);
     this.renderer = new Renderer($('game'), this.config, sprites);
@@ -218,7 +229,9 @@ class Game {
   }
 
   newGame() {
-    return createGame(this.config, { view: this.renderer.view, mode: this.gameMode });
+    const s = createGame(this.config, { view: this.renderer.view, mode: this.gameMode });
+    for (const id of this.autoBuy) setAutoBuy(s, id, true);
+    return s;
   }
 
   onCanvasPress(event) {
@@ -307,7 +320,8 @@ class Game {
   onShopKey(e) {
     if (e.repeat) return; // holding a number must not spend every point at once
     const choice = /^Digit([1-9])$/.exec(e.code);
-    if (choice) $('upgrades').children[Number(choice[1]) - 1]?.click();
+    const row = choice && $('upgrades').children[Number(choice[1]) - 1];
+    if (row) row.querySelector(e.shiftKey ? '.upgrade-auto' : '.upgrade')?.click();
     else if (e.code === 'KeyB' || e.code === 'Escape') this.closeShop();
     else if (SHOP_PREVIOUS_TAB.includes(e.code)) this.moveShopTab(-1);
     else if (SHOP_NEXT_TAB.includes(e.code)) this.moveShopTab(1);
@@ -339,7 +353,7 @@ class Game {
     $('controls-hint').hidden = !hint;
     $('overlay').hidden = false;
     // Not the name field: a movement key still held at the moment of victory would type into it.
-    const buyable = shop ? $('upgrades').querySelector('button:not(:disabled)') : null;
+    const buyable = shop ? $('upgrades').querySelector('.upgrade:not(:disabled)') : null;
     const first = buyable ?? (score ? $('score-submit') : $('overlay-action'));
     first.focus({ preventScroll: true, focusVisible: false });
   }
@@ -414,7 +428,20 @@ class Game {
     button.disabled = item.state !== 'ready' || points < 1;
     button.append(key, label, note);
     button.addEventListener('click', () => this.buyUpgrade(item.id));
-    return button;
+    const auto = document.createElement('button');
+    auto.type = 'button';
+    auto.className = 'upgrade-auto';
+    auto.textContent = 'Auto';
+    auto.dataset.item = item.id;
+    auto.title = 'Buy this on its own whenever you have a point';
+    auto.setAttribute('aria-label', `Auto-buy: ${this.shopLabel(item.id)}`);
+    auto.setAttribute('aria-pressed', String(this.state.autoBuy.includes(item.id)));
+    auto.disabled = item.state === 'owned'; // a one-time item already bought has nothing left to buy
+    auto.addEventListener('click', () => this.toggleAutoBuy(item.id));
+    const row = document.createElement('div');
+    row.className = 'upgrade-row';
+    row.append(button, auto);
+    return row;
   }
 
   showShop() {
@@ -429,7 +456,7 @@ class Game {
       text: points ? `${points} upgrade${points === 1 ? '' : 's'} to spend.` : `No upgrades to spend yet. Every ${this.config.gameplay.xpToUpgrade} XP earns one.`,
       action: 'Back to game',
       shop: true,
-      hint: 'Number keys buy, A and D change section, B goes back.',
+      hint: 'Number keys buy, Shift + number sets Auto, A and D change section, B goes back. Auto items are bought as soon as you have a point.',
     });
   }
 
@@ -439,6 +466,18 @@ class Game {
     this.updateHud();
     if (this.state.upgradePoints) this.showShop();
     else this.closeShop();
+  }
+
+  toggleAutoBuy(id) {
+    if (this.mode !== 'shop') return;
+    setAutoBuy(this.state, id, !this.state.autoBuy.includes(id));
+    this.autoBuy = [...this.state.autoBuy];
+    remember(AUTO_BUY_KEY, JSON.stringify(this.autoBuy));
+    spendAutoBuy(this.state); // points already banked go to it straight away
+    for (const event of this.state.events.splice(0)) this.handleEvent(event);
+    this.updateHud();
+    this.showShop(); // stays open: the player may be setting several
+    $('upgrades').querySelector(`.upgrade-auto[data-item="${id}"]`)?.focus({ preventScroll: true, focusVisible: false });
   }
 
   showMenu() {
@@ -659,6 +698,9 @@ class Game {
         break;
       case 'hostageLocked':
         this.toast(`Defeat ${boss} to free ${hostage}`);
+        break;
+      case 'autoBought':
+        this.toast(event.ids.length === 1 ? `Auto-bought: ${this.shopLabel(event.ids[0])}` : `Auto-bought ${event.ids.length} upgrades`);
         break;
       case 'upgradeReady':
         this.toast(`Upgrade ready. ${isMobile() ? 'Tap Shop' : 'Press B'} to spend it.`);

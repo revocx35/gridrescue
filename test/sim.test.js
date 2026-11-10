@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { defaultConfig, mapConfig } from '../public/js/schema.js';
 import { forEachItemIn, hitsSolid } from '../public/js/scenery.js';
-import { SHOP_SECTIONS, applyUpgrade, availableUpgrades, createGame, destroyMissileAt, frameSeconds, scoreLimits, shopSections, step } from '../public/js/sim.js';
+import { SHOP_SECTIONS, applyUpgrade, availableUpgrades, createGame, destroyMissileAt, frameSeconds, scoreLimits, setAutoBuy, shopSections, spendAutoBuy, step } from '../public/js/sim.js';
 
 const DT = 1 / 60;
 
@@ -604,6 +604,68 @@ describe('XP and upgrades', () => {
     step(s, DT, still);
     assert.equal(s.upgradePoints, 2);
     assert.equal(s.xp, 50);
+  });
+
+  it('spends a new point on an item set to auto, without the shop', () => {
+    const s = quiet();
+    assert.equal(setAutoBuy(s, 'damage', true), true);
+    giveOrb(s, 200);
+    step(s, DT, still);
+    assert.equal(s.upgradePoints, 0);
+    assert.equal(s.bought.damage, 1);
+    assert.equal(s.status, 'playing');
+    const auto = s.events.find((e) => e.type === 'autoBought');
+    assert.deepEqual(auto.ids, ['damage']);
+    assert.equal(s.events.some((e) => e.type === 'upgradeReady'), false);
+  });
+
+  it('shares points evenly between several auto items', () => {
+    const s = quiet();
+    setAutoBuy(s, 'damage', true);
+    setAutoBuy(s, 'health', true);
+    giveOrb(s, 800);
+    step(s, DT, still);
+    assert.equal(s.upgradePoints, 0);
+    assert.equal(s.bought.damage, 2);
+    assert.equal(s.bought.health, 2);
+  });
+
+  it('keeps the point when no auto item can be bought, and buys it once one can', () => {
+    const s = quiet();
+    setAutoBuy(s, 'pump', true);
+    setAutoBuy(s, 'laserRate', true); // needs the laser first
+    giveOrb(s, 400);
+    step(s, DT, still);
+    assert.equal(s.gun.pump, true);
+    assert.equal(s.upgradePoints, 1);
+    assert.ok(s.events.some((e) => e.type === 'upgradeReady'));
+    assert.equal(applyUpgrade(s, 'laser'), true);
+    s.events.length = 0;
+    giveOrb(s, 200);
+    step(s, DT, still);
+    assert.equal(s.bought.laserRate, 1);
+    assert.equal(s.upgradePoints, 0);
+  });
+
+  it('spends points already banked when an item is switched to auto', () => {
+    const s = quiet();
+    giveOrb(s, 400);
+    step(s, DT, still);
+    assert.equal(s.upgradePoints, 2);
+    setAutoBuy(s, 'regen', true);
+    assert.deepEqual(spendAutoBuy(s), ['regen', 'regen']);
+    assert.equal(s.upgradePoints, 0);
+  });
+
+  it('stops buying an item switched off and ignores unknown items', () => {
+    const s = quiet();
+    setAutoBuy(s, 'damage', true);
+    setAutoBuy(s, 'damage', false);
+    assert.equal(setAutoBuy(s, 'nonsense', true), false);
+    assert.deepEqual(s.autoBuy, []);
+    giveOrb(s, 200);
+    step(s, DT, still);
+    assert.equal(s.upgradePoints, 1);
   });
 
   it('splits the shop into weapons, defense and companions', () => {
